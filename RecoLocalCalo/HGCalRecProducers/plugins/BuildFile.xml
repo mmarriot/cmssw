@@ -6,10 +6,13 @@
   <use name="CondFormats/DataRecord"/>
   <use name="CondFormats/HGCalObjects"/>
   <use name="DataFormats/CaloRecHit"/>
+  <use name="DataFormats/EgammaReco"/>
   <use name="DataFormats/ForwardDetId"/>
   <use name="DataFormats/HGCDigi"/>
   <use name="DataFormats/HGCRecHit"/>
+  <use name="DataFormats/HGCalReco"/>
   <use name="DataFormats/HcalDetId"/>
+  <use name="DataFormats/ParticleFlowReco"/>
   <use name="DataFormats/TICL"/>
   <use name="FWCore/Framework"/>
   <use name="FWCore/MessageLogger"/>
@@ -22,6 +25,7 @@
   <use name="HeterogeneousCore/AlpakaInterface"/>
   <use name="RecoLocalCalo/HGCalRecAlgos"/>
   <use name="RecoLocalCalo/HGCalRecProducers"/>
+  <use name="RecoParticleFlow/PFClusterProducer"/>
   <flags EDM_PLUGIN="1"/>
   <flags ALPAKA_BACKENDS="serial"/>
 </library>
@@ -39,12 +43,14 @@
   <use name="DataFormats/HGCalReco"/>
   <use name="DataFormats/CaloRecHit"/>
   <use name="DataFormats/Portable"/>
+  <use name="DataFormats/ParticleFlowReco"/>
   <use name="Geometry/CaloGeometry"/>
   <use name="Geometry/HGCalCommonData"/>
   <use name="Geometry/HGCalGeometry"/>
   <use name="HeterogeneousCore/AlpakaCore"/>
   <use name="HeterogeneousCore/AlpakaInterface"/>
   <use name="RecoLocalCalo/HGCalRecAlgos"/>
+  <use name="RecoParticleFlow/PFRecHitProducer"/>
   <flags ALPAKA_BACKENDS="1"/>
   <flags EDM_PLUGIN="1"/>
 </library>
