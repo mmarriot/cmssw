@@ -4,6 +4,7 @@
 #include <span>
 
 #include <alpaka/alpaka.hpp>
+#include <xtd/xtd.h>
 
 #include "HeterogeneousCore/AlpakaInterface/interface/config.h"
 #include "HeterogeneousCore/AlpakaInterface/interface/memory.h"
@@ -17,7 +18,7 @@
 #include "CLUEstering/data_structures/PointsDevice.hpp"
 
 // rho / delta / nearestHigher are only needed for dumping: no reconstruction
-// module reads them. 
+// module reads them.
 #define DUMP_CLUSTERS 0
 
 namespace ALPAKA_ACCELERATOR_NAMESPACE {
@@ -32,25 +33,13 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
       ALPAKA_FN_ACC void operator()(TAcc const& acc,
                                     const int32_t* seeds,
                                     HGCalSoARecHitsExtraDeviceCollection::View outputs,
-                                    const uint32_t nseeds) const {
+                                    uint32_t nseeds) const {
         for (auto k : uniform_elements(acc, nseeds)) {
           outputs[seeds[k]].isSeed() = 1;
         }
       }
     };
 
-    struct FillTagsKernel {
-      template <typename TAcc>
-      ALPAKA_FN_ACC void operator()(TAcc const& acc,
-                                    HGCalSoARecHitsDeviceCollection::ConstView inputs,
-                                    std::size_t* tags,
-                                    const uint32_t size) const {
-        for (auto i : uniform_elements(acc, size)) {
-          tags[i] = static_cast<std::size_t>(inputs[i].detid());
-        }
-      }
-    };
-     
     //for dumping
     struct CopyClueIntermediatesKernel {
       template <typename TAcc>
@@ -61,7 +50,7 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
                                     HGCalSoARecHitsExtraDeviceCollection::View outputs,
                                     const uint32_t size,
                                     const bool isScintillator) const {
-        constexpr float kTwoPi = 2.f * static_cast<float>(M_PI);
+        constexpr auto kTwoPi = 2.f * static_cast<float>(M_PI);
         for (auto i : uniform_elements(acc, size)) {
           outputs[i].rho() = rho[i];
           const int32_t nh = nearestHigher[i];
@@ -70,15 +59,15 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
             outputs[i].delta() = std::numeric_limits<float>::max();
           } else {
             outputs[i].nearestHigher() = static_cast<unsigned int>(nh);
-            float d1 = inputs[nh].dim1() - inputs[i].dim1();
-            float d2 = inputs[nh].dim2() - inputs[i].dim2();
+            auto d1 = inputs[nh].dim1() - inputs[i].dim1();
+            auto d2 = inputs[nh].dim2() - inputs[i].dim2();
             if (isScintillator) {
               if (d2 > kTwoPi / 2.f)
                 d2 -= kTwoPi;
               else if (d2 < -kTwoPi / 2.f)
                 d2 += kTwoPi;
             }
-            outputs[i].delta() = std::sqrt(d1 * d1 + d2 * d2);
+            outputs[i].delta() = xtd::sqrt(d1 * d1 + d2 * d2);
           }
         }
       }
@@ -95,14 +84,14 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
                                         std::span<const uint32_t> batchItemSizes,
                                         const HGCalSoARecHitsDeviceCollection::ConstView inputs,
                                         HGCalSoARecHitsExtraDeviceCollection::View outputs) const {
-    // Nothing to do for an empty event: return 0 clusters 
+    // Nothing to do for an empty event: return 0 clusters
     if (size == 0) {
       auto nClusters = make_device_view<unsigned int>(queue, outputs.numberOfClustersScalar());
       alpaka::memset(queue, nClusters, 0x0);
       return;
     }
 
-    const uint32_t items = 256;
+    const auto items = 256u;
 
     auto isSeedView = make_device_view(queue, outputs.isSeed().data(), size);
     alpaka::fill(queue, isSeedView, static_cast<uint8_t>(0));
@@ -113,12 +102,8 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
                                                inputs.dim2().data(),
                                                inputs.energy().data(),
                                                outputs.clusterIndex().data());
-    d_points.set_density_uncertainty(std::span<const float>(inputs.sigmaNoise().data(), size));
-
-    auto tags = make_device_buffer<std::size_t[]>(queue, size);
-    const auto tagsWorkDiv = make_workdiv<Acc1D>(divide_up_by(size, items), items);
-    alpaka::exec<Acc1D>(queue, tagsWorkDiv, FillTagsKernel{}, inputs, tags.data(), size);
-    d_points.set_tags(std::span<std::size_t>(tags.data(), size));
+    d_points.set_density_uncertainty(inputs.sigmaNoise());
+    d_points.set_tags(inputs.detid());
 
     clue::Clusterer<2> algo(queue, dc, kappa, dc * outlierDeltaFactor);
     if (isScintillator) {
@@ -135,7 +120,7 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
     }
     alpaka::wait(queue);
 
-#if DUMP_CLUSTERS 
+#if DUMP_CLUSTERS
     {
       const auto& pointsView = d_points.view();
       const auto copyWorkDiv = make_workdiv<Acc1D>(divide_up_by(size, items), items);
@@ -156,10 +141,10 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
     auto d_nClusters = make_device_view<unsigned int>(queue, outputs.numberOfClustersScalar());
     alpaka::memcpy(queue, d_nClusters, h_nClusters);
 
-    std::span<const int32_t> seeds = algo.getSeeds();
-    const uint32_t nseeds = static_cast<uint32_t>(seeds.size());
+    auto seeds = algo.getSeeds();
+    const auto nseeds = static_cast<uint32_t>(seeds.size());
     if (nseeds > 0) {
-      const uint32_t seedGroups = divide_up_by(nseeds, items);
+      const auto seedGroups = divide_up_by(nseeds, items);
       const auto seedWorkDiv = make_workdiv<Acc1D>(seedGroups, items);
       alpaka::exec<Acc1D>(queue, seedWorkDiv, SeedKernel{}, seeds.data(), outputs, nseeds);
     }
