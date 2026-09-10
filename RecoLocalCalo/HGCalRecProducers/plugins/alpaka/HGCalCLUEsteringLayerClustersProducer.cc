@@ -27,7 +27,7 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
           deviceToken_{produces()},
           deltac_(config.getParameter<float>("deltac")),
           kappa_(config.getParameter<float>("kappa")),
-          outlierDeltaFactor_(config.getParameter<float>("outlierDeltaFactor")) {}
+          outlierDeltaFactor_(config.getParameter<float>("outlierDeltaFactor")),
           isScintillator_(config.getParameter<std::string>("detector") == "BH") {}
 
     ~HGCalCLUEsteringLayerClustersProducer() override = default;

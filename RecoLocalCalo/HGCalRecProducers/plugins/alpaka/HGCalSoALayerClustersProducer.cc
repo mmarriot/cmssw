@@ -28,7 +28,7 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
           getTokenDeviceClusters_{consumes(config.getParameter<edm::InputTag>("hgcalRecHitsLayerClustersSoA"))},
           deviceTokenSoAClusters_{produces()},
           thresholdW0_(config.getParameter<float>("thresholdW0")),
-          positionDeltaRho2_(config.getParameter<float>("positionDeltaRho2")) {}
+          positionDeltaRho2_(config.getParameter<float>("positionDeltaRho2")),
           isScintillator_(config.getParameter<std::string>("detector") == "BH") {}
 
     ~HGCalSoALayerClustersProducer() override = default;
