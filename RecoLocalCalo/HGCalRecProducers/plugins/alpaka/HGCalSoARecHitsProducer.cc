@@ -192,7 +192,7 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
       desc.add<std::vector<float>>("dEdXweights");
       desc.add<double>("noiseMip", 0.2);
       desc.add<double>("sciThicknessCorrection", 1.0);
-      desc.add<double>("ecut", 3.);
+      desc.add<float>("ecut", 3.);
       descriptions.addWithDefaultLabel(desc);
     }
 

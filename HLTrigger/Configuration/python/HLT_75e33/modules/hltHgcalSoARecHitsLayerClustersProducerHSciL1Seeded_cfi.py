@@ -6,7 +6,7 @@ hltHgcalSoARecHitsLayerClustersProducerHSciL1Seeded = cms.EDProducer("HGCalCLUEs
     ),
     hgcalRecHitsSoA = cms.InputTag("hltHgcalSoARecHitsProducerHSciL1Seeded"),
     detector = cms.string('BH'),
-    deltac = cms.double(0.0315),
-    kappa = cms.double(9),
-    outlierDeltaFactor = cms.double(2.0)
+    deltac = cms.float(0.0315),
+    kappa = cms.float(9),
+    outlierDeltaFactor = cms.float(2.0)
 )

@@ -7,6 +7,6 @@ hltHgcalSoALayerClustersProducerHSciL1Seeded = cms.EDProducer("HGCalSoALayerClus
     hgcalRecHitsLayerClustersSoA = cms.InputTag("hltHgcalSoARecHitsLayerClustersProducerHSciL1Seeded"),
     hgcalRecHitsSoA = cms.InputTag("hltHgcalSoARecHitsProducerHSciL1Seeded"),
     detector = cms.string('BH'),
-    positionDeltaRho2 = cms.double(1.69),
-    thresholdW0 = cms.double(2.9)
+    positionDeltaRho2 = cms.float(1.69),
+    thresholdW0 = cms.float(2.9)
 )
