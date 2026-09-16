@@ -73,3 +73,9 @@ _HgcalLocalRecoL1SeededSequence_barrel = cms.Sequence(
     hltMergeLayerClustersL1Seeded
 ) 
 ticl_barrel.toReplaceWith(_HgcalLocalRecoL1SeededSequence, _HgcalLocalRecoL1SeededSequence_barrel)
+
+# with ticl_dev the CLUEstering assignment CLUE3DHigh reads is run on device.
+from Configuration.ProcessModifiers.ticl_dev import ticl_dev
+from ..modules.hltTiclTrackstersCLUEsteringAssignmentL1Seeded_cfi import *
+ticl_dev.toModify(HLTHgcalTiclPFClusteringForEgammaL1SeededSequence,
+                  func = lambda s : s.associate(cms.Task(hltTiclTrackstersCLUEsteringAssignmentL1Seeded)))

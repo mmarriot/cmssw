@@ -74,3 +74,9 @@ _HgcalTICLPatternRecognitionUnseededSequence_barrel = cms.Sequence(hltFilteredLa
 from Configuration.ProcessModifiers.ticl_barrel_cff import ticl_barrel
 ticl_barrel.toReplaceWith(_HgcalLocalRecoUnseededSequence, _HgcalLocalRecoUnseededSequence_barrel)
 ticl_barrel.toReplaceWith(_HgcalTICLPatternRecognitionUnseededSequence, _HgcalTICLPatternRecognitionUnseededSequence_barrel)
+
+# with ticl_dev the CLUEstering assignment CLUE3DHigh reads is run on device.
+from Configuration.ProcessModifiers.ticl_dev import ticl_dev
+from ..modules.hltTiclTrackstersCLUEsteringAssignment_cfi import *
+ticl_dev.toModify(HLTHgcalTiclPFClusteringForEgammaUnseededSequence,
+                  func = lambda s : s.associate(cms.Task(hltTiclTrackstersCLUEsteringAssignment)))
