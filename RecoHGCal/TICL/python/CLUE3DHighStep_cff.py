@@ -85,14 +85,16 @@ from RecoHGCal.TICL.trackstersCLUEsteringProducer_cfi import trackstersCLUEsteri
 ticlTrackstersCLUEsteringAssignment = _trackstersCLUEsteringProducer.clone(
     filtered_mask = "filteredLayerClustersCLUE3DHigh:CLUE3DHigh",
     dc = 1.,
-    rhoc = 0.8,
-    outlierDistance = 2.8,
-    seedingDistance = 2.8,
-    sigmaT = [0.003, 0.006, 0.012], # EE, HSi, HSci
-    layerScale = 6.,
-    rhocEtaExponent = 2.,
+    rhoc = 0.2550,
+    outlierDistance = 2.1155,
+    seedingDistance = 1.6642,
+    sigmaT = [0.00227, 0.003, 0.01649], # EE, HSi, HSci
+    layerScale = 6.177,
+    rhocEtaExponent = 1.88588,
     rhocPivotRadius = 0.42
 )
+
+ticl_dev.toModify(filteredLayerClustersCLUE3DHigh, min_cluster_size = 1)
 
 ticl_dev.toModify(ticlTrackstersCLUE3DHigh,
     patternRecognitionBy = 'CLUEstering',
@@ -101,6 +103,7 @@ ticl_dev.toModify(ticlTrackstersCLUE3DHigh,
         algo_verbosity = 0,
         doPidCut = True,
         cutHadProb = 999,
+        minNumLayerCluster = 3, 
     )
 )
 
