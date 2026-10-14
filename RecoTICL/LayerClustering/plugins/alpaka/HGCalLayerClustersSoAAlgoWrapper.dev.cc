@@ -1,259 +1,220 @@
-#include "RecoTICL/LayerClustering/interface/HGCalTilesConstants.h"
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+
+#include <alpaka/alpaka.hpp>
+
+#include "HeterogeneousCore/AlpakaInterface/interface/config.h"
+#include "HeterogeneousCore/AlpakaInterface/interface/memory.h"
+#include "HeterogeneousCore/AlpakaInterface/interface/workdivision.h"
 
 #include "HGCalLayerClustersSoAAlgoWrapper.h"
 #include "ConstantsForClusters.h"
-
-#include <cmath>
-#include <cstdint>
 
 namespace ALPAKA_ACCELERATOR_NAMESPACE {
 
   using namespace cms::alpakatools;
   using namespace hgcal::constants;
 
-  // Scintillator (BH) rechits store (eta, phi) in (dim1, dim2). Recover the
-  // cartesian transverse position from them and the cell z.
-  ALPAKA_FN_ACC ALPAKA_FN_INLINE static void etaPhiZToXY(
-      const float eta, const float phi, const float z, float& x, float& y) {
-    const float r = z / std::sinh(eta);
-    x = r * std::cos(phi);
-    y = r * std::sin(phi);
-  }
+  namespace {
 
-  // Set energy and number of hits in each clusters
-  class HGCalLayerClustersSoAAlgoKernelEnergy {
-  public:
-    ALPAKA_FN_ACC void operator()(Acc1D const& acc,
-                                  const unsigned int numer_of_clusters,
-                                  const HGCalSoARecHitsDeviceCollection::ConstView input_rechits_soa,
-                                  const HGCalSoARecHitsExtraDeviceCollection::ConstView input_clusters_soa,
-                                  reco::CaloClusterDeviceCollection::View outputs) const {
-      // make a strided loop over the kernel grid, covering up to "size" elements
-      for (auto i : uniform_elements(acc, input_rechits_soa.metadata().size())) {
-        // Skip unassigned rechits
-        if (input_clusters_soa[i].clusterIndex() == kInvalidCluster) {
-          continue;
-        }
-        auto clIdx = input_clusters_soa[i].clusterIndex();
-        alpaka::atomicAdd(acc, &outputs.energy()[clIdx].energy(), input_rechits_soa[i].energy());
-        alpaka::atomicAdd(acc, &outputs.position()[clIdx].cells(), 1);
-        if (input_clusters_soa[i].isSeed() == 1) {
-          outputs.indexes()[clIdx].seedID() = input_rechits_soa[i].detid();
+    // Scintillator (BH) rechits store (eta, phi) in (dim1, dim2). Recover the
+    // cartesian transverse position from them and the cell z.
+    ALPAKA_FN_ACC ALPAKA_FN_INLINE void etaPhiZToXY(
+        const float eta, const float phi, const float z, float& x, float& y) {
+      const float r = z / std::sinh(eta);
+      x = r * std::cos(phi);
+      y = r * std::sin(phi);
+    }
+
+    // Per rechit -> per layer cluster: the sum of the energies, the number of cells and the DetId of the seed
+    struct KernelLayerClusterEnergy {
+      ALPAKA_FN_ACC void operator()(Acc1D const& acc,
+                                    HGCalSoARecHitsDeviceCollection::ConstView recHits,
+                                    HGCalSoARecHitsExtraDeviceCollection::ConstView recHitsClustering,
+                                    reco::CaloClusterDeviceCollection::View layerClusters) const {
+        for (auto i : uniform_elements(acc, recHits.metadata().size())) {
+          const int c = recHitsClustering[i].clusterIndex();
+          if (c == kInvalidCluster) {
+            continue;
+          }
+          alpaka::atomicAdd(acc, &layerClusters.energy()[c].energy(), recHits[i].energy());
+          alpaka::atomicAdd(acc, &layerClusters.position()[c].cells(), 1);
+          if (recHitsClustering[i].isSeed() == 1) {
+            layerClusters.indexes()[c].seedID() = recHits[i].detid();
+          }
         }
       }
-    }
-  };
+    };
 
-  // Kernel to find the max for every cluster
-  class HGCalLayerClustersSoAAlgoKernelPositionByHits {
-  public:
-    ALPAKA_FN_ACC void operator()(Acc1D const& acc,
-                                  const unsigned int numer_of_clusters,
-                                  float thresholdW0,
-                                  float positionDeltaRho2,
-                                  const HGCalSoARecHitsDeviceCollection::ConstView input_rechits_soa,
-                                  const HGCalSoARecHitsExtraDeviceCollection::ConstView input_clusters_soa,
-                                  reco::CaloClusterDeviceCollection::View outputs,
-                                  HGCalSoAClustersExtraDeviceCollection::View outputs_service) const {
-      // make a strided loop over the kernel grid, covering up to "size" elements
-      for (int32_t hit_index : uniform_elements(acc, input_rechits_soa.metadata().size())) {
-        const int cluster_index = input_clusters_soa[hit_index].clusterIndex();
-
-        // Bail out if you are not part of any cluster
-        if (cluster_index == kInvalidCluster) {
-          continue;
-        }
-
-        alpaka::atomicAdd(acc, &outputs_service[cluster_index].total_weight(), input_rechits_soa[hit_index].energy());
-        // Read the current seed index, and the associated energy.
-        int clusterSeed = outputs_service[cluster_index].maxEnergyIndex();
-        float clusterEnergy = (clusterSeed == kInvalidIndex) ? 0.f : input_rechits_soa[clusterSeed].energy();
-
-        while (input_rechits_soa[hit_index].energy() > clusterEnergy) {
-          // If output_service[cluster_index].maxEnergyIndex() did not change,
-          // store the new value and exit the loop.  Otherwise return the value
-          // that has been updated, and decide again if the maximum needs to be
-          // updated.
-          int seed = alpaka::atomicCas(acc, &outputs_service[cluster_index].maxEnergyIndex(), clusterSeed, hit_index);
-          if (seed == hit_index) {
-            // atomicCas has stored the new value.
-            break;
-          } else {
-            // Update the seed index and re-read the associated energy.
-            clusterSeed = seed;
-            clusterEnergy = (clusterSeed == kInvalidIndex) ? 0.f : input_rechits_soa[clusterSeed].energy();
+    // Per rechit -> per layer cluster: the sum of the energies and the index of the most energetic rechit
+    struct KernelLayerClusterMostEnergeticHit {
+      ALPAKA_FN_ACC void operator()(Acc1D const& acc,
+                                    HGCalSoARecHitsDeviceCollection::ConstView recHits,
+                                    HGCalSoARecHitsExtraDeviceCollection::ConstView recHitsClustering,
+                                    float* energySum,
+                                    int* maxEnergyHit) const {
+        for (int32_t i : uniform_elements(acc, recHits.metadata().size())) {
+          const int c = recHitsClustering[i].clusterIndex();
+          if (c == kInvalidCluster) {
+            continue;
           }
-        }  // CAS
-      }  // uniform_elements
-    }  // operator()
-  };
+          alpaka::atomicAdd(acc, &energySum[c], recHits[i].energy());
 
-  // Real Kernel position
-  class HGCalLayerClustersSoAAlgoKernelPositionByHits2 {
-  public:
-    ALPAKA_FN_ACC void operator()(Acc1D const& acc,
-                                  const unsigned int numer_of_clusters,
-                                  float thresholdW0,
-                                  float positionDeltaRho2,
-                                  const bool isScintillator,
-                                  const HGCalSoARecHitsDeviceCollection::ConstView input_rechits_soa,
-                                  const HGCalSoARecHitsExtraDeviceCollection::ConstView input_clusters_soa,
-                                  reco::CaloClusterDeviceCollection::View outputs,
-                                  HGCalSoAClustersExtraDeviceCollection::View outputs_service) const {
-      // make a strided loop over the kernel grid, covering up to "size" elements
-      for (auto hit_index : uniform_elements(acc, input_rechits_soa.metadata().size())) {
-        const int cluster_index = input_clusters_soa[hit_index].clusterIndex();
-
-        // Bail out if you are not part of any cluster
-        if (cluster_index == kInvalidCluster) {
-          continue;
+          // Replace the most energetic rechit of the cluster with this one while this one has more energy. If
+          // another thread replaced it in the meantime, the compare-and-swap fails and returns the new one.
+          int current = maxEnergyHit[c];
+          float currentEnergy = (current == kInvalidIndex) ? 0.f : recHits[current].energy();
+          while (recHits[i].energy() > currentEnergy) {
+            const int previous = alpaka::atomicCas(acc, &maxEnergyHit[c], current, i);
+            if (previous == i) {
+              break;
+            }
+            current = previous;
+            currentEnergy = (current == kInvalidIndex) ? 0.f : recHits[current].energy();
+          }
         }
-        const int max_energy_index = outputs_service[cluster_index].maxEnergyIndex();
+      }
+    };
 
-        if (isScintillator) {
-          const float energy = input_rechits_soa[hit_index].energy();
-          float cell_x;
-          float cell_y;
-          etaPhiZToXY(input_rechits_soa[hit_index].dim1(),
-                      input_rechits_soa[hit_index].dim2(),
-                      input_rechits_soa[hit_index].dim3(),
-                      cell_x,
-                      cell_y);
-          alpaka::atomicAdd(acc, &outputs.position()[cluster_index].x(), cell_x * energy);
-          alpaka::atomicAdd(acc, &outputs.position()[cluster_index].y(), cell_y * energy);
-          alpaka::atomicAdd(acc, &outputs_service[cluster_index].total_weight_log(), energy);
-          continue;
+    // Per rechit -> per layer cluster: the weighted sums of the transverse positions and the sum of the weights.
+    // The scintillator rechits are weighted by their energy, the silicon rechits within 1.3 cm (1+6 cells, for all
+    // thicknesses) of the most energetic one by max(thresholdW0 + log(energy / cluster energy), 0).
+    struct KernelLayerClusterPositionSums {
+      ALPAKA_FN_ACC void operator()(Acc1D const& acc,
+                                    float thresholdW0,
+                                    float positionDeltaRho2,
+                                    bool isScintillator,
+                                    HGCalSoARecHitsDeviceCollection::ConstView recHits,
+                                    HGCalSoARecHitsExtraDeviceCollection::ConstView recHitsClustering,
+                                    reco::CaloClusterDeviceCollection::View layerClusters,
+                                    const float* energySum,
+                                    float* positionWeightSum,
+                                    const int* maxEnergyHit) const {
+        for (auto i : uniform_elements(acc, recHits.metadata().size())) {
+          const int c = recHitsClustering[i].clusterIndex();
+          if (c == kInvalidCluster) {
+            continue;
+          }
+
+          if (isScintillator) {
+            const float energy = recHits[i].energy();
+            float x;
+            float y;
+            etaPhiZToXY(recHits[i].dim1(), recHits[i].dim2(), recHits[i].dim3(), x, y);
+            alpaka::atomicAdd(acc, &layerClusters.position()[c].x(), x * energy);
+            alpaka::atomicAdd(acc, &layerClusters.position()[c].y(), y * energy);
+            alpaka::atomicAdd(acc, &positionWeightSum[c], energy);
+            continue;
+          }
+
+          const int maxHit = maxEnergyHit[c];
+          const float d1 = recHits[i].dim1() - recHits[maxHit].dim1();
+          const float d2 = recHits[i].dim2() - recHits[maxHit].dim2();
+          if (std::fmaf(d1, d1, d2 * d2) > positionDeltaRho2) {
+            continue;
+          }
+          const float weight = std::max(thresholdW0 + std::log(recHits[i].energy() / energySum[c]), 0.f);
+          alpaka::atomicAdd(acc, &layerClusters.position()[c].x(), recHits[i].dim1() * weight);
+          alpaka::atomicAdd(acc, &layerClusters.position()[c].y(), recHits[i].dim2() * weight);
+          alpaka::atomicAdd(acc, &positionWeightSum[c], weight);
         }
+      }
+    };
 
-        //for silicon only just use 1+6 cells = 1.3cm for all thicknesses
-        const float d1 = input_rechits_soa[hit_index].dim1() - input_rechits_soa[max_energy_index].dim1();
-        const float d2 = input_rechits_soa[hit_index].dim2() - input_rechits_soa[max_energy_index].dim2();
-        if (std::fmaf(d1, d1, d2 * d2) > positionDeltaRho2) {
-          continue;
+    // Per layer cluster: the transverse position from the weighted sums, or the one of its most energetic rechit if
+    // no rechit has a weight, and z and the layer of its most energetic rechit
+    struct KernelLayerClusterPosition {
+      ALPAKA_FN_ACC void operator()(Acc1D const& acc,
+                                    bool isScintillator,
+                                    HGCalSoARecHitsDeviceCollection::ConstView recHits,
+                                    reco::CaloClusterDeviceCollection::View layerClusters,
+                                    const float* positionWeightSum,
+                                    const int* maxEnergyHit) const {
+        for (auto c : uniform_elements(acc, layerClusters.position().metadata().size())) {
+          const int maxHit = maxEnergyHit[c];
+          auto position = layerClusters.position()[c];
+          if (positionWeightSum[c] > 0.f) {
+            const float invWeightSum = 1.f / positionWeightSum[c];
+            position.x() *= invWeightSum;
+            position.y() *= invWeightSum;
+          } else if (isScintillator) {
+            float x;
+            float y;
+            etaPhiZToXY(recHits[maxHit].dim1(), recHits[maxHit].dim2(), recHits[maxHit].dim3(), x, y);
+            position.x() = x;
+            position.y() = y;
+          } else {
+            position.x() = recHits[maxHit].dim1();
+            position.y() = recHits[maxHit].dim2();
+          }
+          position.z() = recHits[maxHit].dim3();
+          position.layer() = recHits[maxHit].layer();
         }
-        float Wi = std::max(thresholdW0 + std::log(input_rechits_soa[hit_index].energy() /
-                                                   outputs_service[cluster_index].total_weight()),
-                            0.f);
-        alpaka::atomicAdd(acc, &outputs.position()[cluster_index].x(), input_rechits_soa[hit_index].dim1() * Wi);
-        alpaka::atomicAdd(acc, &outputs.position()[cluster_index].y(), input_rechits_soa[hit_index].dim2() * Wi);
-        alpaka::atomicAdd(acc, &outputs_service[cluster_index].total_weight_log(), Wi);
-      }  // uniform_elements
-    }  // operator()
-  };
+      }
+    };
 
-  // Besides the final position, add also the DetId of the seed of each cluster
-  class HGCalLayerClustersSoAAlgoKernelPositionByHits3 {
-  public:
-    ALPAKA_FN_ACC void operator()(Acc1D const& acc,
-                                  const unsigned int numer_of_clusters,
-                                  float thresholdW0,
-                                  float positionDeltaRho2,
-                                  const bool isScintillator,
-                                  const HGCalSoARecHitsDeviceCollection::ConstView input_rechits_soa,
-                                  const HGCalSoARecHitsExtraDeviceCollection::ConstView input_clusters_soa,
-                                  reco::CaloClusterDeviceCollection::View outputs,
-                                  HGCalSoAClustersExtraDeviceCollection::View outputs_service) const {
-      // make a strided loop over the kernel grid, covering up to "size" elements
-      for (auto cluster_index : uniform_elements(acc, outputs.position().metadata().size())) {
-        const int max_energy_index = outputs_service[cluster_index].maxEnergyIndex();
-
-        if (outputs_service[cluster_index].total_weight_log() > 0.f) {
-          float inv_tot_weight = 1.f / outputs_service[cluster_index].total_weight_log();
-          outputs.position()[cluster_index].x() *= inv_tot_weight;
-          outputs.position()[cluster_index].y() *= inv_tot_weight;
-        } else if (isScintillator) {
-          float cell_x;
-          float cell_y;
-          etaPhiZToXY(input_rechits_soa[max_energy_index].dim1(),
-                      input_rechits_soa[max_energy_index].dim2(),
-                      input_rechits_soa[max_energy_index].dim3(),
-                      cell_x,
-                      cell_y);
-          outputs.position()[cluster_index].x() = cell_x;
-          outputs.position()[cluster_index].y() = cell_y;
-        } else {
-          outputs.position()[cluster_index].x() = input_rechits_soa[max_energy_index].dim1();
-          outputs.position()[cluster_index].y() = input_rechits_soa[max_energy_index].dim2();
-        }
-        outputs.position()[cluster_index].z() = input_rechits_soa[max_energy_index].dim3();
-        outputs.position()[cluster_index].layer() = input_rechits_soa[max_energy_index].layer();
-      }  // uniform_elements
-    }  // operator()
-  };
+  }  // namespace
 
   void HGCalLayerClustersSoAAlgoWrapper::run(Queue& queue,
-                                             const unsigned int size,
+                                             uint32_t nLayerClusters,
                                              float thresholdW0,
                                              float positionDeltaRho2,
-                                             const bool isScintillator,
-                                             const HGCalSoARecHitsDeviceCollection::ConstView input_rechits_soa,
-                                             const HGCalSoARecHitsExtraDeviceCollection::ConstView input_clusters_soa,
-                                             reco::CaloClusterDeviceCollection::View outputs,
-                                             HGCalSoAClustersExtraDeviceCollection::View outputs_service) const {
-    auto x = cms::alpakatools::make_device_view<float>(queue, outputs.position().x());
-    alpaka::memset(queue, x, 0x0);
-    auto y = cms::alpakatools::make_device_view<float>(queue, outputs.position().y());
-    alpaka::memset(queue, y, 0x0);
-    auto cells = cms::alpakatools::make_device_view<int>(queue, outputs.position().cells());
-    alpaka::memset(queue, cells, 0x0);
-    auto energy = cms::alpakatools::make_device_view<float>(queue, outputs.energy().energy());
-    alpaka::memset(queue, energy, 0x0);
-    auto total_weight = cms::alpakatools::make_device_view<float>(queue, outputs_service.total_weight(), size);
-    alpaka::memset(queue, total_weight, 0x0);
-    auto total_weight_log = cms::alpakatools::make_device_view<float>(queue, outputs_service.total_weight_log(), size);
-    alpaka::memset(queue, total_weight_log, 0x0);
-    auto maxEnergyIndex = cms::alpakatools::make_device_view<int>(queue, outputs_service.maxEnergyIndex(), size);
-    alpaka::memset(queue, maxEnergyIndex, kInvalidIndexByte);
-
-    if (input_rechits_soa.metadata().size() == 0)
+                                             bool isScintillator,
+                                             HGCalSoARecHitsDeviceCollection::ConstView recHits,
+                                             HGCalSoARecHitsExtraDeviceCollection::ConstView recHitsClustering,
+                                             reco::CaloClusterDeviceCollection::View layerClusters) const {
+    if (nLayerClusters == 0) {
       return;
+    }
 
-    // use 64 items per group (this value is arbitrary, but it's a reasonable starting point)
-    uint32_t items = 64;
+    auto x = make_device_view<float>(queue, layerClusters.position().x());
+    alpaka::memset(queue, x, 0x0);
+    auto y = make_device_view<float>(queue, layerClusters.position().y());
+    alpaka::memset(queue, y, 0x0);
+    auto cells = make_device_view<int>(queue, layerClusters.position().cells());
+    alpaka::memset(queue, cells, 0x0);
+    auto energy = make_device_view<float>(queue, layerClusters.energy().energy());
+    alpaka::memset(queue, energy, 0x0);
+    // per layer cluster: the sum of the energies, the sum of the position weights and the most energetic rechit
+    auto energySum = make_device_buffer<float[]>(queue, nLayerClusters);
+    alpaka::memset(queue, energySum, 0x0);
+    auto positionWeightSum = make_device_buffer<float[]>(queue, nLayerClusters);
+    alpaka::memset(queue, positionWeightSum, 0x0);
+    auto maxEnergyHit = make_device_buffer<int[]>(queue, nLayerClusters);
+    alpaka::memset(queue, maxEnergyHit, kInvalidIndexByte);
 
-    // use as many groups as needed to cover the whole problem
-    uint32_t groups = divide_up_by(input_rechits_soa.metadata().size(), items);
-
-    // map items to
-    //   - threads with a single element per thread on a GPU backend
-    //   - elements within a single thread on a CPU backend
-    auto workDiv = make_workdiv<Acc1D>(groups, items);
-
-    alpaka::exec<Acc1D>(
-        queue, workDiv, HGCalLayerClustersSoAAlgoKernelEnergy{}, size, input_rechits_soa, input_clusters_soa, outputs);
+    constexpr uint32_t blockSize = 64;
+    const auto workDivRecHits = make_workdiv<Acc1D>(divide_up_by(recHits.metadata().size(), blockSize), blockSize);
+    const auto workDivLayerClusters = make_workdiv<Acc1D>(divide_up_by(nLayerClusters, blockSize), blockSize);
+    alpaka::exec<Acc1D>(queue, workDivRecHits, KernelLayerClusterEnergy{}, recHits, recHitsClustering, layerClusters);
     alpaka::exec<Acc1D>(queue,
-                        workDiv,
-                        HGCalLayerClustersSoAAlgoKernelPositionByHits{},
-                        size,
-                        thresholdW0,
-                        positionDeltaRho2,
-                        input_rechits_soa,
-                        input_clusters_soa,
-                        outputs,
-                        outputs_service);
+                        workDivRecHits,
+                        KernelLayerClusterMostEnergeticHit{},
+                        recHits,
+                        recHitsClustering,
+                        energySum.data(),
+                        maxEnergyHit.data());
     alpaka::exec<Acc1D>(queue,
-                        workDiv,
-                        HGCalLayerClustersSoAAlgoKernelPositionByHits2{},
-                        size,
-                        thresholdW0,
-                        positionDeltaRho2,
-                        isScintillator,
-                        input_rechits_soa,
-                        input_clusters_soa,
-                        outputs,
-                        outputs_service);
-    uint32_t group_clusters = divide_up_by(size, items);
-    auto workDivClusters = make_workdiv<Acc1D>(group_clusters, items);
-    alpaka::exec<Acc1D>(queue,
-                        workDivClusters,
-                        HGCalLayerClustersSoAAlgoKernelPositionByHits3{},
-                        size,
+                        workDivRecHits,
+                        KernelLayerClusterPositionSums{},
                         thresholdW0,
                         positionDeltaRho2,
                         isScintillator,
-                        input_rechits_soa,
-                        input_clusters_soa,
-                        outputs,
-                        outputs_service);
+                        recHits,
+                        recHitsClustering,
+                        layerClusters,
+                        energySum.data(),
+                        positionWeightSum.data(),
+                        maxEnergyHit.data());
+    alpaka::exec<Acc1D>(queue,
+                        workDivLayerClusters,
+                        KernelLayerClusterPosition{},
+                        isScintillator,
+                        recHits,
+                        layerClusters,
+                        positionWeightSum.data(),
+                        maxEnergyHit.data());
   }
+
 }  // namespace ALPAKA_ACCELERATOR_NAMESPACE

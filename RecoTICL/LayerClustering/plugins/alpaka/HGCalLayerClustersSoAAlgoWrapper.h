@@ -1,31 +1,27 @@
 #ifndef RecoLocalCalo_HGCalRecProducers_plugins_alpaka_HGCalLayerClustersSoAAlgoWrapper_h
 #define RecoLocalCalo_HGCalRecProducers_plugins_alpaka_HGCalLayerClustersSoAAlgoWrapper_h
 
-#include <alpaka/alpaka.hpp>
+#include <cstdint>
 
-#include "DataFormats/HGCalReco/interface/HGCalSoARecHitsHostCollection.h"
 #include "DataFormats/HGCalReco/interface/alpaka/HGCalSoARecHitsDeviceCollection.h"
 #include "DataFormats/HGCalReco/interface/alpaka/HGCalSoARecHitsExtraDeviceCollection.h"
-// #include "DataFormats/HGCalReco/interface/alpaka/HGCalSoAClustersDeviceCollection.h"
 #include "DataFormats/CaloRecHit/interface/alpaka/CaloClusterDeviceCollection.h"
-#include "RecoLocalCalo/HGCalRecProducers/interface/alpaka/HGCalSoAClustersExtraDeviceCollection.h"
 #include "HeterogeneousCore/AlpakaInterface/interface/config.h"
-#include "HeterogeneousCore/AlpakaInterface/interface/traits.h"
-#include "HeterogeneousCore/AlpakaInterface/interface/workdivision.h"
 
 namespace ALPAKA_ACCELERATOR_NAMESPACE {
 
   class HGCalLayerClustersSoAAlgoWrapper {
   public:
+    // Fills the nLayerClusters layer clusters (energy, number of cells, seed and position) from the rechits and their
+    // clustering (the layer cluster and the seed flag of each rechit)
     void run(Queue& queue,
-             const unsigned int numer_of_clusters,
+             uint32_t nLayerClusters,
              float thresholdW0,
              float positionDeltaRho2,
-             const bool isScintillator,
-             const HGCalSoARecHitsDeviceCollection::ConstView input_rechits_soa,
-             const HGCalSoARecHitsExtraDeviceCollection::ConstView input_clusters_soa,
-             reco::CaloClusterDeviceCollection::View outputs,
-             HGCalSoAClustersExtraDeviceCollection::View outputs_service) const;
+             bool isScintillator,
+             HGCalSoARecHitsDeviceCollection::ConstView recHits,
+             HGCalSoARecHitsExtraDeviceCollection::ConstView recHitsClustering,
+             reco::CaloClusterDeviceCollection::View layerClusters) const;
   };
 }  // namespace ALPAKA_ACCELERATOR_NAMESPACE
 
