@@ -17,8 +17,8 @@
 
 namespace ALPAKA_ACCELERATOR_NAMESPACE {
 
-  // Builds the layer clusters of one HGCAL component (energy, number of cells, seed and position) from its rechits
-  // and their clustering (the layer cluster and the seed flag of each rechit)
+  // Builds the layer clusters of one HGCAL component (energy, number of cells, seed, position and time) from its
+  // rechits and their clustering (the layer cluster and the seed flag of each rechit)
   class HGCalSoALayerClustersProducer : public stream::SynchronizingEDProducer<> {
   public:
     HGCalSoALayerClustersProducer(edm::ParameterSet const& config)
@@ -28,7 +28,8 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
           layerClustersToken_{produces()},
           thresholdW0_(config.getParameter<float>("thresholdW0")),
           positionDeltaRho2_(config.getParameter<float>("positionDeltaRho2")),
-          isScintillator_(config.getParameter<std::string>("detector") == "BH") {}
+          isScintillator_(config.getParameter<std::string>("detector") == "BH"),
+          nHitsTime_(config.getParameter<unsigned int>("nHitsTime")) {}
 
     // The number of layer clusters is on the device, and the host needs it to allocate them
     void acquire(device::Event const& iEvent, device::EventSetup const&) override {
@@ -47,6 +48,7 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
                 thresholdW0_,
                 positionDeltaRho2_,
                 isScintillator_,
+                nHitsTime_,
                 iEvent.get(recHitsToken_).view(),
                 iEvent.get(recHitsClusteringToken_).view(),
                 layerClusters.view());
@@ -61,6 +63,8 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
       desc.add<float>("positionDeltaRho2", 1.69);
       desc.add<std::string>("detector", "EE")
           ->setComment("HGCAL component; 'BH' computes the scintillator centroid in cartesian (eta,phi->x,y).");
+      desc.add<unsigned int>("nHitsTime", 3)
+          ->setComment("Minimum number of rechits with a time for a layer cluster to get a time.");
       descriptions.addWithDefaultLabel(desc);
     }
 
@@ -71,6 +75,7 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
     float const thresholdW0_;
     float const positionDeltaRho2_;
     bool const isScintillator_;
+    unsigned int const nHitsTime_;
     HGCalLayerClustersSoAAlgoWrapper const algo_{};
     // copied from the device in acquire, used in produce
     unsigned int nLayerClusters_ = 0;
