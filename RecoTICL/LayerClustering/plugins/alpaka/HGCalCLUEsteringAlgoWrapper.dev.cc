@@ -20,14 +20,18 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
 
   namespace {
 
-    struct KernelSetSeeds {
-      template <typename TAcc>
-      ALPAKA_FN_ACC void operator()(TAcc const& acc,
-                                    const int32_t* seeds,
-                                    HGCalSoARecHitsExtraDeviceCollection::View outputs,
-                                    uint32_t nseeds) const {
-        for (auto k : uniform_elements(acc, nseeds)) {
-          outputs[seeds[k]].isSeed() = 1;
+    // Copies the seed flag of each rechit from CLUEstering and counts the layer clusters: one per seed, as
+    // CLUEstering gives the k-th seed the cluster index k
+    struct KernelMarkSeeds {
+      ALPAKA_FN_ACC void operator()(Acc1D const& acc,
+                                    const int32_t* isSeed,
+                                    HGCalSoARecHitsExtraDeviceCollection::View recHitsClustering,
+                                    uint32_t nRecHits) const {
+        for (auto i : uniform_elements(acc, nRecHits)) {
+          recHitsClustering[i].isSeed() = isSeed[i];
+          if (isSeed[i]) {
+            alpaka::atomicAdd(acc, &recHitsClustering.numberOfClustersScalar(), 1u);
+          }
         }
       }
     };
@@ -43,17 +47,11 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
                                         std::span<const uint32_t> batchItemSizes,
                                         HGCalSoARecHitsDeviceCollection::ConstView recHits,
                                         HGCalSoARecHitsExtraDeviceCollection::View recHitsClustering) const {
-    // Nothing to do for an empty event: return 0 clusters
+    auto nClusters = make_device_view<unsigned int>(queue, recHitsClustering.numberOfClustersScalar());
+    alpaka::memset(queue, nClusters, 0x0);
     if (nRecHits == 0) {
-      auto nClusters = make_device_view<unsigned int>(queue, recHitsClustering.numberOfClustersScalar());
-      alpaka::memset(queue, nClusters, 0x0);
       return;
     }
-
-    const auto items = 256u;
-
-    auto isSeedView = make_device_view(queue, recHitsClustering.isSeed().data(), nRecHits);
-    alpaka::fill(queue, isSeedView, static_cast<uint8_t>(0));
 
     clue::ConstPointsDevice<2, float> d_points(queue,
                                                static_cast<int32_t>(nRecHits),
@@ -77,21 +75,14 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
     } else {
       algo.make_clusters(queue, d_points, batchItemSizes);
     }
-    alpaka::wait(queue);
 
-    auto h_nClusters = make_host_buffer<unsigned int>(queue);
-    *h_nClusters.data() = static_cast<unsigned int>(d_points.n_clusters());
-    auto d_nClusters = make_device_view<unsigned int>(queue, recHitsClustering.numberOfClustersScalar());
-    alpaka::memcpy(queue, d_nClusters, h_nClusters);
-
-    auto seeds = algo.getSeeds();
-    const auto nseeds = static_cast<uint32_t>(seeds.size());
-    if (nseeds > 0) {
-      const auto seedGroups = divide_up_by(nseeds, items);
-      const auto seedWorkDiv = make_workdiv<Acc1D>(seedGroups, items);
-      alpaka::exec<Acc1D>(queue, seedWorkDiv, KernelSetSeeds{}, seeds.data(), recHitsClustering, nseeds);
-    }
-    alpaka::wait(queue);
+    // The kernel reads is_seed from d_points, which is destroyed when run() returns, possibly before the kernel has
+    // run. This is safe: on CUDA CLUEstering frees its device memory in queue order (cudaFreeAsync), on ROCm hipFree
+    // waits for the device to finish, and the serial backend runs the kernel immediately.
+    constexpr uint32_t blockSize = 256;
+    const auto workDivRecHits = make_workdiv<Acc1D>(divide_up_by(nRecHits, blockSize), blockSize);
+    alpaka::exec<Acc1D>(
+        queue, workDivRecHits, KernelMarkSeeds{}, d_points.view().is_seed().data(), recHitsClustering, nRecHits);
   }
 
 }  // namespace ALPAKA_ACCELERATOR_NAMESPACE
