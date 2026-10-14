@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <cstdint>
 
@@ -27,6 +28,15 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
       x = r * std::cos(phi);
       y = r * std::sin(phi);
     }
+
+    // The most energetic rechit of a layer cluster is found with one atomicMax on this key. The bits of a non-negative
+    // float, read as an integer, are ordered as it's value is. For equal energies, ~hit makes the
+    // lowest rechit index win. This assumes energy is always positive
+    ALPAKA_FN_ACC ALPAKA_FN_INLINE uint64_t energyKey(const float energy, const uint32_t hit) {
+      return (static_cast<uint64_t>(std::bit_cast<uint32_t>(energy)) << 32) | ~hit;
+    }
+
+    ALPAKA_FN_ACC ALPAKA_FN_INLINE uint32_t hitOfEnergyKey(const uint64_t key) { return ~static_cast<uint32_t>(key); }
 
     // Rechits without a time have a negative time error, and scintillator layer clusters have no time
     ALPAKA_FN_ACC ALPAKA_FN_INLINE bool hasTime(const bool isScintillator, const float timeError) {
@@ -119,14 +129,15 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
       return {sum / num, static_cast<float>(1. / std::sqrt(static_cast<double>(num)))};
     }
 
-    // Per rechit -> per layer cluster: the sum of the energies, the number of cells, the DetId of the seed and the
-    // number of rechits with a time
+    // Per rechit -> per layer cluster: the sum of the energies, the number of cells, the DetId of the seed, the key of
+    // the most energetic rechit and the number of rechits with a time
     struct KernelLayerClusterEnergy {
       ALPAKA_FN_ACC void operator()(Acc1D const& acc,
                                     bool isScintillator,
                                     HGCalSoARecHitsDeviceCollection::ConstView recHits,
                                     HGCalSoARecHitsExtraDeviceCollection::ConstView recHitsClustering,
                                     reco::CaloClusterDeviceCollection::View layerClusters,
+                                    uint64_t* maxEnergyKey,
                                     uint32_t* timedHits) const {
         for (auto i : uniform_elements(acc, recHits.metadata().size())) {
           const int c = recHitsClustering[i].clusterIndex();
@@ -135,45 +146,12 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
           }
           alpaka::atomicAdd(acc, &layerClusters.energy()[c].energy(), recHits[i].energy());
           alpaka::atomicAdd(acc, &layerClusters.position()[c].cells(), 1);
+          alpaka::atomicMax(acc, &maxEnergyKey[c], energyKey(recHits[i].energy(), i));
           if (recHitsClustering[i].isSeed() == 1) {
             layerClusters.indexes()[c].seedID() = recHits[i].detid();
           }
           if (hasTime(isScintillator, recHits[i].timeError())) {
             alpaka::atomicAdd(acc, &timedHits[c], 1u);
-          }
-        }
-      }
-    };
-
-    // Per rechit -> per layer cluster: the sum of the energies and the index of the most energetic rechit
-    struct KernelLayerClusterMostEnergeticHit {
-      ALPAKA_FN_ACC void operator()(Acc1D const& acc,
-                                    HGCalSoARecHitsDeviceCollection::ConstView recHits,
-                                    HGCalSoARecHitsExtraDeviceCollection::ConstView recHitsClustering,
-                                    float* energySum,
-                                    int* maxEnergyHit) const {
-        for (int32_t i : uniform_elements(acc, recHits.metadata().size())) {
-          const int c = recHitsClustering[i].clusterIndex();
-          if (c == kInvalidCluster) {
-            continue;
-          }
-          alpaka::atomicAdd(acc, &energySum[c], recHits[i].energy());
-
-          // Replace the most energetic rechit of the cluster with this one while this one has more energy. If
-          // another thread replaced it in the meantime, the compare-and-swap fails and returns the new one.
-          // 
-          // TODO: See if we can improve this. This scans over the rechits again to find the maximum energy but
-          // maybe we dont need to. 
-          // If found a way to find the maximum without this we could remove this kernel
-          int current = maxEnergyHit[c];
-          float currentEnergy = (current == kInvalidIndex) ? 0.f : recHits[current].energy();
-          while (recHits[i].energy() > currentEnergy) {
-            const int previous = alpaka::atomicCas(acc, &maxEnergyHit[c], current, i);
-            if (previous == i) {
-              break;
-            }
-            current = previous;
-            currentEnergy = (current == kInvalidIndex) ? 0.f : recHits[current].energy();
           }
         }
       }
@@ -192,9 +170,8 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
                                     HGCalSoARecHitsDeviceCollection::ConstView recHits,
                                     HGCalSoARecHitsExtraDeviceCollection::ConstView recHitsClustering,
                                     reco::CaloClusterDeviceCollection::View layerClusters,
-                                    const float* energySum,
                                     float* positionWeightSum,
-                                    const int* maxEnergyHit,
+                                    const uint64_t* maxEnergyKey,
                                     const uint32_t* timedOffsets,
                                     uint32_t* timedFilled,
                                     float* times,
@@ -224,13 +201,14 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
             continue;
           }
 
-          const int maxHit = maxEnergyHit[c];
+          const uint32_t maxHit = hitOfEnergyKey(maxEnergyKey[c]);
           const float d1 = recHits[i].dim1() - recHits[maxHit].dim1();
           const float d2 = recHits[i].dim2() - recHits[maxHit].dim2();
           if (std::fmaf(d1, d1, d2 * d2) > positionDeltaRho2) {
             continue;
           }
-          const float weight = std::max(thresholdW0 + std::log(recHits[i].energy() / energySum[c]), 0.f);
+          const float weight =
+              std::max(thresholdW0 + std::log(recHits[i].energy() / layerClusters.energy()[c].energy()), 0.f);
           alpaka::atomicAdd(acc, &layerClusters.position()[c].x(), recHits[i].dim1() * weight);
           alpaka::atomicAdd(acc, &layerClusters.position()[c].y(), recHits[i].dim2() * weight);
           alpaka::atomicAdd(acc, &positionWeightSum[c], weight);
@@ -247,12 +225,12 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
                                     HGCalSoARecHitsDeviceCollection::ConstView recHits,
                                     reco::CaloClusterDeviceCollection::View layerClusters,
                                     const float* positionWeightSum,
-                                    const int* maxEnergyHit,
+                                    const uint64_t* maxEnergyKey,
                                     const uint32_t* timedOffsets,
                                     float* times,
                                     float* weights) const {
         for (auto c : uniform_elements(acc, layerClusters.position().metadata().size())) {
-          const int maxHit = maxEnergyHit[c];
+          const uint32_t maxHit = hitOfEnergyKey(maxEnergyKey[c]);
           auto position = layerClusters.position()[c];
           if (positionWeightSum[c] > 0.f) {
             const float invWeightSum = 1.f / positionWeightSum[c];
@@ -304,13 +282,12 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
     alpaka::memset(queue, cells, 0x0);
     auto energy = make_device_view<float>(queue, layerClusters.energy().energy());
     alpaka::memset(queue, energy, 0x0);
-    // per layer cluster: the sum of the energies, the sum of the position weights and the most energetic rechit
-    auto energySum = make_device_buffer<float[]>(queue, nLayerClusters);
-    alpaka::memset(queue, energySum, 0x0);
+    // per layer cluster: the sum of the position weights, and the key of the most energetic rechit (0 is below any
+    // rechit)
     auto positionWeightSum = make_device_buffer<float[]>(queue, nLayerClusters);
     alpaka::memset(queue, positionWeightSum, 0x0);
-    auto maxEnergyHit = make_device_buffer<int[]>(queue, nLayerClusters);
-    alpaka::memset(queue, maxEnergyHit, kInvalidIndexByte);
+    auto maxEnergyKey = make_device_buffer<uint64_t[]>(queue, nLayerClusters);
+    alpaka::memset(queue, maxEnergyKey, 0x0);
     // The times and time weights of the rechits with a time, grouped by layer cluster: the ones of layer cluster c are
     // at [timedOffsets[c], timedOffsets[c + 1]). Their number is not known on the host, so times and weights are sized
     // for all the rechits.
@@ -333,16 +310,10 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
                         recHits,
                         recHitsClustering,
                         layerClusters,
+                        maxEnergyKey.data(),
                         timedHits.data());
     // inclusive scan of the counts, so timedOffsets[c + 1] is where the segment of layer cluster c ends
     iterativePrefixScan<Acc1D>(timedHits.data(), timedOffsets.data() + 1, nLayerClusters, queue);
-    alpaka::exec<Acc1D>(queue,
-                        workDivRecHits,
-                        KernelLayerClusterMostEnergeticHit{},
-                        recHits,
-                        recHitsClustering,
-                        energySum.data(),
-                        maxEnergyHit.data());
     alpaka::exec<Acc1D>(queue,
                         workDivRecHits,
                         KernelLayerClusterPositionSums{},
@@ -352,9 +323,8 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
                         recHits,
                         recHitsClustering,
                         layerClusters,
-                        energySum.data(),
                         positionWeightSum.data(),
-                        maxEnergyHit.data(),
+                        maxEnergyKey.data(),
                         timedOffsets.data(),
                         timedFilled.data(),
                         times.data(),
@@ -367,7 +337,7 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
                         recHits,
                         layerClusters,
                         positionWeightSum.data(),
-                        maxEnergyHit.data(),
+                        maxEnergyKey.data(),
                         timedOffsets.data(),
                         times.data(),
                         weights.data());
