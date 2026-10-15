@@ -217,7 +217,8 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
     };
 
     // Per layer cluster: the transverse position from the weighted sums, or the one of its most energetic rechit if
-    // no rechit has a weight, z and the layer of its most energetic rechit, and the time from the times of its rechits
+    // no rechit has a weight, z and the layer of its most energetic rechit, and the time from the times of its rechits.
+    // Also sets the columns not computed yet to the defaults of reco::CaloCluster.
     struct KernelLayerClusterPositionAndTime {
       ALPAKA_FN_ACC void operator()(Acc1D const& acc,
                                     bool isScintillator,
@@ -254,6 +255,11 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
               fixSizeHighestDensity(times + first, weights + first, timedOffsets[c + 1] - first, nHitsTime);
           layerClusters.timing()[c].time() = time.time;
           layerClusters.timing()[c].timeError() = time.error;
+
+          layerClusters.energy()[c].correctedEnergy() = -1.f;
+          layerClusters.energy()[c].correctedEnergyUncertainty() = -1.f;
+          layerClusters.indexes()[c].algoID() = ::reco::CaloCluster::undefined;
+          layerClusters.indexes()[c].flags() = 0;
         }
       }
     };
@@ -282,6 +288,10 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
     alpaka::memset(queue, cells, 0x0);
     auto energy = make_device_view<float>(queue, layerClusters.energy().energy());
     alpaka::memset(queue, energy, 0x0);
+    // reco::CaloID has a virtual destructor, so it cannot be constructed on the device: zero it instead, which gives
+    // the detectors() of a default CaloID
+    auto caloID = make_device_view<::reco::CaloID>(queue, layerClusters.indexes().caloID());
+    alpaka::memset(queue, caloID, 0x0);
     // per layer cluster: the sum of the position weights, and the key of the most energetic rechit (0 is below any
     // rechit)
     auto positionWeightSum = make_device_buffer<float[]>(queue, nLayerClusters);
