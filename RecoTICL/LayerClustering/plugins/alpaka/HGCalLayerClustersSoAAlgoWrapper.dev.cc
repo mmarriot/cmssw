@@ -132,7 +132,7 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
     // Per rechit -> per layer cluster: the sum of the energies, the number of cells, the DetId of the seed, the key of
     // the most energetic rechit and the number of rechits with a time
     struct KernelLayerClusterEnergy {
-      ALPAKA_FN_ACC void operator()(Acc1D const& acc,
+      ALPAKA_FN_ACC void operator()(const Acc1D& acc,
                                     bool isScintillator,
                                     HGCalSoARecHitsDeviceCollection::ConstView recHits,
                                     HGCalSoARecHitsExtraDeviceCollection::ConstView recHitsClustering,
@@ -163,7 +163,7 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
     // Also copies the time and the time weight (1 / timeError^2) of each rechit with a time to the segment of its layer
     // cluster in times and weights, which starts at timedOffsets[c].
     struct KernelLayerClusterPositionSums {
-      ALPAKA_FN_ACC void operator()(Acc1D const& acc,
+      ALPAKA_FN_ACC void operator()(const Acc1D& acc,
                                     float thresholdW0,
                                     float positionDeltaRho2,
                                     bool isScintillator,
@@ -220,7 +220,7 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
     // no rechit has a weight, z and the layer of its most energetic rechit, and the time from the times of its rechits.
     // Also sets the columns not computed yet to the defaults of reco::CaloCluster.
     struct KernelLayerClusterPositionAndTime {
-      ALPAKA_FN_ACC void operator()(Acc1D const& acc,
+      ALPAKA_FN_ACC void operator()(const Acc1D& acc,
                                     bool isScintillator,
                                     uint32_t nHitsTime,
                                     HGCalSoARecHitsDeviceCollection::ConstView recHits,

@@ -23,7 +23,7 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
     // Copies the seed flag of each rechit from CLUEstering and counts the layer clusters: one per seed, as
     // CLUEstering gives the k-th seed the cluster index k
     struct KernelMarkSeeds {
-      ALPAKA_FN_ACC void operator()(Acc1D const& acc,
+      ALPAKA_FN_ACC void operator()(const Acc1D& acc,
                                     const int32_t* isSeed,
                                     HGCalSoARecHitsExtraDeviceCollection::View recHitsClustering,
                                     uint32_t nRecHits) const {

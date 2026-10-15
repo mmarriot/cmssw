@@ -32,15 +32,15 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
           nHitsTime_(config.getParameter<unsigned int>("nHitsTime")) {}
 
     // The number of layer clusters is on the device, and the host needs it to allocate them
-    void acquire(device::Event const& iEvent, device::EventSetup const&) override {
-      auto const recHitsClustering = iEvent.get(recHitsClusteringToken_).view();
+    void acquire(const device::Event& iEvent, const device::EventSetup&) override {
+      const auto recHitsClustering = iEvent.get(recHitsClusteringToken_).view();
       alpaka::memcpy(iEvent.queue(),
                      cms::alpakatools::make_host_view<unsigned int>(nLayerClusters_),
                      cms::alpakatools::make_device_view<const unsigned int>(
                          alpaka::getDev(iEvent.queue()), recHitsClustering.numberOfClustersScalar()));
     }
 
-    void produce(device::Event& iEvent, device::EventSetup const&) override {
+    void produce(device::Event& iEvent, const device::EventSetup&) override {
       reco::CaloClusterDeviceCollection layerClusters(
           iEvent.queue(), nLayerClusters_, nLayerClusters_, nLayerClusters_, nLayerClusters_);
       algo_.run(iEvent.queue(),
@@ -69,14 +69,14 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
     }
 
   private:
-    device::EDGetToken<HGCalSoARecHitsDeviceCollection> const recHitsToken_;
-    device::EDGetToken<HGCalSoARecHitsExtraDeviceCollection> const recHitsClusteringToken_;
-    device::EDPutToken<reco::CaloClusterDeviceCollection> const layerClustersToken_;
-    float const thresholdW0_;
-    float const positionDeltaRho2_;
-    bool const isScintillator_;
-    unsigned int const nHitsTime_;
-    HGCalLayerClustersSoAAlgoWrapper const algo_{};
+    const device::EDGetToken<HGCalSoARecHitsDeviceCollection> recHitsToken_;
+    const device::EDGetToken<HGCalSoARecHitsExtraDeviceCollection> recHitsClusteringToken_;
+    const device::EDPutToken<reco::CaloClusterDeviceCollection> layerClustersToken_;
+    const float thresholdW0_;
+    const float positionDeltaRho2_;
+    const bool isScintillator_;
+    const unsigned int nHitsTime_;
+    const HGCalLayerClustersSoAAlgoWrapper algo_{};
     // copied from the device in acquire, used in produce
     unsigned int nLayerClusters_ = 0;
   };

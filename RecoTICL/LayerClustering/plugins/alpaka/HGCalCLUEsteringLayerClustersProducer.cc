@@ -21,7 +21,7 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
   // seed flag of each rechit, and the number of layer clusters
   class HGCalCLUEsteringLayerClustersProducer : public stream::EDProducer<> {
   public:
-    HGCalCLUEsteringLayerClustersProducer(edm::ParameterSet const& config)
+    HGCalCLUEsteringLayerClustersProducer(const edm::ParameterSet& config)
         : EDProducer(config),
           recHitsToken_{consumes(config.getParameter<edm::InputTag>("hgcalRecHitsSoA"))},
           layerSizesToken_{consumes<std::vector<uint32_t>>(
@@ -32,11 +32,11 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
           outlierDeltaFactor_(config.getParameter<float>("outlierDeltaFactor")),
           isScintillator_(config.getParameter<std::string>("detector") == "BH") {}
 
-    void produce(device::Event& iEvent, device::EventSetup const&) override {
-      auto const& recHits = iEvent.get(recHitsToken_);
+    void produce(device::Event& iEvent, const device::EventSetup&) override {
+      const auto& recHits = iEvent.get(recHitsToken_);
       // Per-layer batch sizes computed upstream by the rechit producer (the SoA
       // is emitted layer-contiguous), used directly as the CLUEstering batch sizes.
-      auto const& layerSizes = iEvent.get(layerSizesToken_);
+      const auto& layerSizes = iEvent.get(layerSizesToken_);
       // One row per rechit, like the rechit SoA
       HGCalSoARecHitsExtraDeviceCollection recHitsClustering(iEvent.queue(), recHits->metadata().size());
 
@@ -64,14 +64,14 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
     }
 
   private:
-    device::EDGetToken<HGCalSoARecHitsDeviceCollection> const recHitsToken_;
-    edm::EDGetTokenT<std::vector<uint32_t>> const layerSizesToken_;
-    device::EDPutToken<HGCalSoARecHitsExtraDeviceCollection> const recHitsClusteringToken_;
-    float const deltac_;
-    float const kappa_;
-    float const outlierDeltaFactor_;
-    bool const isScintillator_;
-    HGCalCLUEsteringAlgoWrapper const algo_{};
+    const device::EDGetToken<HGCalSoARecHitsDeviceCollection> recHitsToken_;
+    const edm::EDGetTokenT<std::vector<uint32_t>> layerSizesToken_;
+    const device::EDPutToken<HGCalSoARecHitsExtraDeviceCollection> recHitsClusteringToken_;
+    const float deltac_;
+    const float kappa_;
+    const float outlierDeltaFactor_;
+    const bool isScintillator_;
+    const HGCalCLUEsteringAlgoWrapper algo_{};
   };
 
 }  // namespace ALPAKA_ACCELERATOR_NAMESPACE
