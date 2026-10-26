@@ -95,6 +95,7 @@ T_MUONREFS = "edm::ValueMap<reco::MuonRef>"
 T_CALOCLUSTERS_SOA = "reco::CaloClusterHostCollection"
 T_LC_CLUSTERING_SOA = "HGCalSoALayerClustersExtraHostCollection"
 T_TRACKSTERS_SOA = "ticl::TracksterHostCollection"
+T_GROUPS = "std::vector<unsigned int>"
 
 
 # --------------------------------------------------------------------------- #
@@ -311,6 +312,17 @@ _SPECS = [
         ),
         backends=("cpu", "gpu"),
     ),
+    # The first pass of the Cornetto linking on the device, read by the CornettoDevice linking plugin.
+    ModuleSpec(
+        key="CornettoGroupsProducer@alpaka",
+        cfi_module="RecoTICL.Linking.cornettoGroupsProducer_cfi",
+        cfi_symbol="cornettoGroupsProducer",
+        produces=(Product(T_GROUPS),),
+        consumes=(
+            Consumed("tracksters_collections", T_TRACKSTERS, vector=True),
+        ),
+        backends=("cpu", "gpu"),
+    ),
     ModuleSpec(
         key="HGCalTrackstersFromSoAProducer",
         cfi_module="RecoTICL.PatternRecognition.hgCalTrackstersFromSoAProducer_cfi",
@@ -340,6 +352,7 @@ GPU_CAPABLE = frozenset([
     "HGCalSoAMergeLayerClustersProducer",
     "HGCalCLUEsteringTrackstersProducer",
     "HGCalSoATrackstersProducer",
+    "CornettoGroupsProducer",
 ])
 
 
@@ -360,7 +373,8 @@ FILTER_TYPES = frozenset(
 )
 PATTERN_TYPES = frozenset(["CLUE3D", "CA", "FastJet", "Recovery", "CLUEstering"])
 LINKING_TYPES = frozenset(
-    ["Skeletons", "Cornetto", "SuperClusteringDNN", "SuperClusteringMustache", "FastJet", "Recovery"]
+    ["Skeletons", "Cornetto", "CornettoDevice", "SuperClusteringDNN", "SuperClusteringMustache", "FastJet",
+     "Recovery"]
 )
 INFERENCE_TYPES = frozenset(
     ["TracksterInferenceByCNN", "TracksterInferenceByDNN", "TracksterInferenceByPFN"]

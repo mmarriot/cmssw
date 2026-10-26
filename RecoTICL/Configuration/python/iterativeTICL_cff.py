@@ -240,6 +240,9 @@ ticl_v6.toModify(ticlEGammaSuperClusterProducer,
     ticlTracksterLinksSuperclusteringMustache,
     tracksters_collections=_ticlV6Modules["ticlTracksterLinksSuperclusteringDNN"].tracksters_collections)
 ticl_v6.toReplaceWith(ticlTracksterLinks, _ticlV6Modules["ticlTracksterLinks"])
+# TICLv6: the first pass of the Cornetto linking runs on the device.
+ticlCornettoGroups = _ticlV6Modules["ticlCornettoGroups"]
+ticl_v6.toModify(ticlTracksterLinksTask, lambda t: t.add(ticlCornettoGroups))
 ticl_v6.toReplaceWith(ticlTracksterLinksSuperclusteringDNN, _ticlV6Modules["ticlTracksterLinksSuperclusteringDNN"])
 ticl_v6.toReplaceWith(ticlCandidate, _ticlV6Modules["ticlCandidate"])
 ticl_v6.toModify(ticlCandidateTask, lambda t: t.add(ticlTracksterInterpretations))

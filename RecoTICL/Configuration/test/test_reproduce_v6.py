@@ -26,7 +26,7 @@ EXPECTED_DELTA = {
     "ticlTracksterLinks": {
         "tracksters_collections": (["ticlTrackstersCLUE3DHigh", "ticlTrackstersRecovery"],
                                    ["ticlTrackstersCLUEstering"]),
-        "linkingPSet.type": ("Skeletons", "Cornetto"),
+        "linkingPSet.type": ("Skeletons", "CornettoDevice"),
     },
     "ticlTracksterLinksSuperclusteringDNN": {
         "tracksters_collections": (["ticlTrackstersCLUE3DHigh"], ["ticlTrackstersCLUEstering"]),
@@ -49,6 +49,8 @@ EXPECTED_ADDED = {
     "ticlCLUEstering": "HGCalCLUEsteringTrackstersProducer@alpaka",
     "ticlSoATracksters": "HGCalSoATrackstersProducer@alpaka",
     "ticlTrackstersCLUEstering": "HGCalTrackstersFromSoAProducer",
+    # the first pass of the Cornetto linking on the device
+    "ticlCornettoGroups": "CornettoGroupsProducer@alpaka",
 }
 EXPECTED_REMOVED = {"filteredLayerClustersCLUE3DHigh", "ticlTrackstersCLUE3DHigh", "filteredLayerClustersRecovery",
                     "ticlTrackstersRecovery", "ticlSeedingGlobal"}
@@ -67,6 +69,7 @@ EXPECTED_FROM_DEFAULT = {
     "ticlCLUEstering": (),
     "ticlSoATracksters": (),
     "ticlTrackstersCLUEstering": (),
+    "ticlCornettoGroups": ("tracksters_collections",),
 }
 CFI = {
     "TICLInterpretationProducer": ("RecoTICL.Interpretation.ticlInterpretationProducer_cfi",
@@ -79,6 +82,7 @@ CFI = {
                                           "hgCalSoATrackstersProducer"),
     "HGCalTrackstersFromSoAProducer": ("RecoTICL.PatternRecognition.hgCalTrackstersFromSoAProducer_cfi",
                                        "hgCalTrackstersFromSoAProducer"),
+    "CornettoGroupsProducer@alpaka": ("RecoTICL.Linking.cornettoGroupsProducer_cfi", "cornettoGroupsProducer"),
 }
 
 

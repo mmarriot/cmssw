@@ -42,6 +42,8 @@ class Target:
     # labels of the device modules of a CLUEstering iteration: CLUEstering, then the tracksters built on the device
     cluestering_label: str = "ticlCLUEstering"
     soa_tracksters_label: str = "ticlSoATracksters"
+    # label of the first pass of the Cornetto linking on the device (linking plugin CornettoDevice)
+    cornetto_groups_label: str = "ticlCornettoGroups"
     # InputTag for layer_clusters_barrel_tiles; None -> keep the cfi default
     barrel_tile_tag: Optional[object] = None
     # label of the barrel TICLLayerTile producer (created for barrel iterations)
@@ -149,6 +151,7 @@ HLT = Target(
     merged_lc_soa_cfi="HLTrigger.Configuration.HLT_75e33.modules.hltHgcalSoAMergeLayerClusters_cfi",
     cluestering_label="hltTiclCLUEstering",
     soa_tracksters_label="hltTiclSoATracksters",
+    cornetto_groups_label="hltTiclCornettoGroups",
     barrel_tile_tag=cms.InputTag("hltTiclLayerTileBarrelProducer", "ticlLayerTilesBarrel"),
     barrel_tile_label="hltTiclLayerTileBarrelProducer",
     tracks_label="hltGeneralTracks",

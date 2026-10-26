@@ -3,7 +3,8 @@
 
 // Trackster linking by a parent tree.
 //
-// Pair test with anchor a and other trackster b (RecoTICL/Linking/interface/CornettoGeometry.h): the
+// Pair test with anchor a and other trackster b (RecoTICL/Linking/interface/CornettoPairTest.h, which the device
+// version runs too, see TracksterLinkingbyCornettoDevice.h): the
 // axis points from the origin to the barycenter of a. With D = bary_b - bary_a, s = D . axis and
 // dT = |D - s axis|, the pair is compatible when -maxBackwardDistance <= s <= maxLongitudinalDistance,
 // dT <= transverseRadius0 + transverseSlope * |s|, |deta| and |dphi| <= etaWindow, both are in the same
@@ -40,8 +41,10 @@
 #include <vector>
 
 #include "DataFormats/HGCalReco/interface/TICLLayerTile.h"
+#include "RecoTICL/Linking/interface/CornettoFeatures.h"
 #include "RecoTICL/Linking/interface/CornettoGeometry.h"
 #include "RecoTICL/Linking/interface/CornettoGrouping.h"
+#include "RecoTICL/Linking/interface/CornettoPairTest.h"
 #include "RecoTICL/Linking/interface/TracksterLinkingAlgoBase.h"
 
 namespace ticl {
@@ -64,35 +67,7 @@ namespace ticl {
                     const edm::ESHandle<Propagator> propH) override {}
 
     static void fillPSetDescription(edm::ParameterSetDescription& iDesc) {
-      iDesc.add<float>("etaWindow", 0.3f)
-          ->setComment("Max |deta| and |dphi| between the barycenters. Must be in (0, pi).");
-      iDesc.add<float>("maxLongitudinalDistance", 60.f)
-          ->setComment("Max separation [cm] downstream of the anchor along its axis. Must be positive.");
-      iDesc.add<float>("maxBackwardDistance", 20.f)
-          ->setComment("Max separation [cm] upstream of the anchor along its axis. Must not be negative.");
-      iDesc.add<float>("transverseRadius0", 4.f)
-          ->setComment("Max transverse distance at zero separation [cm]. Must not be negative.");
-      iDesc.add<float>("transverseSlope", 0.05f)
-          ->setComment("Growth of the max transverse distance per cm of separation. Must not be negative.");
-      iDesc.add<float>("emTransverseRadius0", 1.5f)
-          ->setComment(
-              "Max transverse distance at zero separation [cm] for an EM anchor. Must not be negative or above "
-              "transverseRadius0.");
-      iDesc.add<float>("emTransverseSlope", 0.05f)
-          ->setComment(
-              "Growth of the max transverse distance per cm of separation for an EM anchor. Must not be negative or "
-              "above transverseSlope.");
-      iDesc.add<float>("timeCompatibilityNSigma", 3.f)
-          ->setComment(
-              "Max |time difference at the anchor barycenter depth| in combined sigmas. Applies when both time "
-              "errors are positive. Values <= 0 disable the gate.");
-      iDesc.add<float>("timeResolutionFloor", 0.05f)
-          ->setComment("Time resolution [ns] added in quadrature to the combined time error. Must not be negative.");
-      iDesc.add<float>("typeVetoProbability", 0.6f)
-          ->setComment(
-              "EM/hadronic veto threshold: 0 disables the veto, else it must be in [0.5, 1]. A pair is refused if "
-              "one EM probability is above this value and the other below 1 - this value. Applies only when both "
-              "carry a PID.");
+      cornetto::fillPairTestDescription(iDesc);
       iDesc.add<float>("minEmittedEnergy", 1.f)
           ->setComment("Min raw energy [GeV] of an emitted group. Applies after linking.");
       iDesc.add<float>("minEmittedPt", 0.5f)
@@ -126,35 +101,28 @@ namespace ticl {
       TracksterLinkingAlgoBase::fillPSetDescription(iDesc);
     }
 
+  protected:
+    using Features = cornetto::Features;
+
+    // The groups of the first pass: steps 1 to 3 of the grouping.
+    virtual std::vector<std::vector<unsigned int>> firstPassGroups(const Features& f) const;
+
   private:
     using Tiles = std::array<TICLLayerTile, 2>;  // one per endcap, index 1 for z > 0
 
-    // Per-trackster quantities the pair test reads.
-    struct Features {
-      std::vector<math::XYZVectorF> bary;
-      std::vector<float> energy;
-      std::vector<float> eta;
-      std::vector<float> phi;
-      std::vector<float> rad;   // |bary|
-      std::vector<float> em;    // EM probability, negative without a PID
-      std::vector<float> time;  // local to the barycenter [ns]
-      std::vector<float> timeError;
-      std::vector<bool> valid;  // finite barycenter and energy
-    };
-
-    Features computeFeatures(const Inputs& input) const;
     // Features of the groups, from the features f of their members.
     Features groupFeatures(const Features& f, const std::vector<std::vector<unsigned int>>& groups) const;
     bool compatible(const Features& f, unsigned int a, unsigned int b) const {
-      return compatibleIn(cone_, emCone_, f, a, b);
+      return pairTest_.compatible(cornetto::feature(f, a), cornetto::feature(f, b));
     }
     bool compatibleIn(const cornetto::Cone& cone,
                       const cornetto::Cone& emCone,
                       const Features& f,
                       unsigned int a,
-                      unsigned int b) const;
+                      unsigned int b) const {
+      return pairTest_.compatibleIn(cone, emCone, cornetto::feature(f, a), cornetto::feature(f, b));
+    }
     bool mergeCompatible(const Features& g, unsigned int a, unsigned int b) const;
-    bool timeCompatible(float tAnchor, float errAnchor, float tOther, float errOther, float path) const;
     bool emits(float energy, float pt, float em) const;
     // The parent of each node: the highest-ranked node a above it, with allowed(a, node) true, that passes
     // test(a, node).
@@ -166,13 +134,7 @@ namespace ticl {
     std::vector<std::vector<unsigned int>> mergeGroups(const Features& f,
                                                        std::vector<std::vector<unsigned int>> groups) const;
 
-    const float etaWindow_;
-    const cornetto::Cone cone_;
-    const cornetto::Cone emCone_;  // cone of an EM anchor, inside cone_
-    const bool useTimeGate_;
-    const float timeNSigma2_;
-    const float timeFloor2_;
-    const float typeVetoProbability_;
+    const cornetto::PairTest pairTest_;
     const float minEmittedEnergy_;
     const float minEmittedPt_;
     const float minEmittedEnergyEM_;

@@ -6,11 +6,16 @@
 
 #include <vector>
 
+#include <alpaka/core/Common.hpp>
+
 namespace ticl::cornetto {
 
   // a ranks above b when it has more energy, or the same energy and a smaller index.
+  ALPAKA_FN_HOST_ACC inline bool ranksAbove(float energyA, unsigned int a, float energyB, unsigned int b) {
+    return energyA > energyB || (energyA == energyB && a < b);
+  }
   inline bool ranksAbove(const std::vector<float>& energy, unsigned int a, unsigned int b) {
-    return energy[a] > energy[b] || (energy[a] == energy[b] && a < b);
+    return ranksAbove(energy[a], a, energy[b], b);
   }
 
   // The root of each node by pointer jumping on the parents; a root is its own parent. Each round reads the result of

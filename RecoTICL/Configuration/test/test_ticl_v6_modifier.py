@@ -9,8 +9,9 @@ from Configuration.ProcessModifiers.ticl_v6_cff import ticl_v6
 
 from RecoTICL.Configuration import presets
 
-LABELS = ("ticlCLUEstering", "ticlSoATracksters", "ticlTrackstersCLUEstering", "ticlTracksterLinks",
-          "ticlTracksterLinksSuperclusteringDNN", "ticlTracksterInterpretations", "ticlCandidate", "pfTICL")
+LABELS = ("ticlCLUEstering", "ticlSoATracksters", "ticlTrackstersCLUEstering", "ticlCornettoGroups",
+          "ticlTracksterLinks", "ticlTracksterLinksSuperclusteringDNN", "ticlTracksterInterpretations", "ticlCandidate",
+          "pfTICL")
 
 
 def main():
@@ -31,6 +32,19 @@ def main():
                   "ticlTrackstersRecovery"):
         if label in process.iterTICLTask.moduleNames():
             failures.append("%s is in iterTICLTask" % label)
+    # The first pass of the Cornetto linking runs on the device: the links read its groups, and it reads the
+    # tracksters of the links with their pair test parameters.
+    groups, links = process.ticlCornettoGroups, process.ticlTracksterLinks
+    if "ticlCornettoGroups" not in process.iterTICLTask.moduleNames():
+        failures.append("ticlCornettoGroups is not in iterTICLTask")
+    if links.linkingPSet.groups.getModuleLabel() != "ticlCornettoGroups":
+        failures.append("ticlTracksterLinks reads the groups of %s" % links.linkingPSet.groups.getModuleLabel())
+    if groups.tracksters_collections.dumpPython() != links.tracksters_collections.dumpPython():
+        failures.append("ticlCornettoGroups and ticlTracksterLinks read different trackster collections")
+    for name in groups.parameterNames_():
+        if name != "tracksters_collections" and hasattr(links.linkingPSet, name) and \
+                getattr(links.linkingPSet, name).value() != getattr(groups, name).value():
+            failures.append("ticlCornettoGroups.%s differs from the linking" % name)
     # CLUE3DHigh does not run, so no module of iterTICLTask reads it.
     for label in sorted(process.iterTICLTask.moduleNames()):
         if "CLUE3DHigh" in getattr(process, label).dumpPython():

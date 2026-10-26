@@ -162,6 +162,15 @@ def _build_links(collection_labels, overrides, target):
     return base.clone(**ov)
 
 
+def _build_cornetto_groups(collection_labels, linking_pset):
+    """The first pass of the Cornetto linking on the device (CornettoGroupsProducer): it reads the trackster collections
+    of the links, with the pair test parameters of their linkingPSet."""
+    base = _cfi_default("CornettoGroupsProducer@alpaka")
+    pair_test = {name: getattr(linking_pset, name) for name in base.parameterNames_()
+                 if name != "tracksters_collections" and hasattr(linking_pset, name)}
+    return base.clone(tracksters_collections=cms.VInputTag(*collection_labels), **pair_test)
+
+
 def _build_supercluster_dnn(source_label, overrides, target):
     base = _cfi_default("TracksterLinksProducer")
     ov = dict(tracksters_collections=[cms.InputTag(source_label)])
@@ -361,7 +370,11 @@ def assemble(cfg):
     # links + superclustering
     if cfg.links_spec:
         labels = [target.trackster_label(n) for n in cfg.links_spec.collections]
-        m[target.links_label] = _build_links(labels, cfg.links_spec.overrides, target)
+        links = _build_links(labels, cfg.links_spec.overrides, target)
+        if links.linkingPSet.type.value() == "CornettoDevice":
+            m[target.cornetto_groups_label] = _build_cornetto_groups(labels, links.linkingPSet)
+            links.linkingPSet.groups = cms.InputTag(target.cornetto_groups_label)
+        m[target.links_label] = links
 
     if cfg.superclustering_spec:
         sc = cfg.superclustering_spec
@@ -373,6 +386,8 @@ def assemble(cfg):
 
     if target.links_label in m:
         links_children = [target.links_label]
+        if target.cornetto_groups_label in m:
+            links_children.insert(0, target.cornetto_groups_label)
         if target.gname("superclustering") in t:
             links_children.append(target.gname("superclustering"))
         mkgroup(target.gname("links"), *links_children)

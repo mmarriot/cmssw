@@ -222,12 +222,14 @@ def links_defaults():
     )
 
 
-def cornetto_links_defaults():
-    """``ticlTracksterLinks`` overrides for v6: :func:`links_defaults` with the Cornetto linking plugin. An EM group
-    is emitted at any raw pt (``minEmittedPtEM`` 0); the other parameters keep the plugin defaults."""
+def cornetto_links_defaults(device=False):
+    """``ticlTracksterLinks`` overrides for v6: :func:`links_defaults` with the Cornetto linking plugin, or with
+    ``device`` the CornettoDevice plugin, whose first pass runs on the device. An EM group is emitted at any raw pt
+    (``minEmittedPtEM`` 0); the other parameters keep the plugin defaults."""
     d = links_defaults()
     d["linkingPSet"] = cms.PSet(
-        type=cms.string("Cornetto"), algo_verbosity=cms.int32(0), minEmittedPtEM=cms.float(0.0)
+        type=cms.string("CornettoDevice" if device else "Cornetto"), algo_verbosity=cms.int32(0),
+        minEmittedPtEM=cms.float(0.0)
     )
     return d
 
@@ -325,7 +327,7 @@ def v6(name="v6", target="offline"):
     # The only iteration is CLUEstering on the layer clusters merged on the device; there is no Recovery for now.
     cfg = (TICLConfig(name, target=target)
            .iteration("CLUEstering").preset()
-           .links(["CLUEstering"], **cornetto_links_defaults())
+           .links(["CLUEstering"], **cornetto_links_defaults(device=True))
            # photon, electron AND neutral_pion: a pi0 is an electromagnetic object.
            .superclustering_dnn(source="CLUEstering",
                                 **supercluster_dnn_defaults(pid_threshold=0.1, emission_pid_threshold=0.3,
