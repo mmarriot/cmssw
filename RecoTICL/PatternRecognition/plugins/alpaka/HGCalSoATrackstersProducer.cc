@@ -3,6 +3,7 @@
 
 #include <optional>
 #include <utility>
+#include <vector>
 
 #include "CondFormats/HGCalObjects/interface/TICLGeomHost.h"
 #include "CondFormats/HGCalObjects/interface/TICLGeomLayersHost.h"
@@ -32,13 +33,16 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
   public:
     HGCalSoATrackstersProducer(const edm::ParameterSet& config)
         : SynchronizingEDProducer(config),
-          layerClustersToken_{consumes(config.getParameter<edm::InputTag>("hgcalLayerClustersSoA"))},
           layerClustersClusteringToken_{
               consumes(config.getParameter<edm::InputTag>("hgcalLayerClustersTrackstersSoA"))},
           trackstersToken_{produces()},
           ticlGeomToken_{consumesCollector().esConsumes<TICLGeomHost, CaloGeometryRecord>()},
           ticlGeomLookupToken_{consumesCollector().esConsumes<TICLGeomLookupHost, CaloGeometryRecord>()},
-          ticlGeomLayersToken_{consumesCollector().esConsumes<TICLGeomLayersHost, CaloGeometryRecord>()} {}
+          ticlGeomLayersToken_{consumesCollector().esConsumes<TICLGeomLayersHost, CaloGeometryRecord>()} {
+      for (const auto& tag : config.getParameter<std::vector<edm::InputTag>>("hgcalLayerClustersSoA")) {
+        layerClustersTokens_.emplace_back(consumes(tag));
+      }
+    }
 
     // The numbers of tracksters and of their layer clusters are on the device, and the host needs them to allocate
     // the tracksters
@@ -66,9 +70,13 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
       // one row per trackster in every block, and one per layer cluster of the tracksters in the vertices
       const unsigned int n = (*counts_)[0];
       ticl::TracksterDeviceCollection tracksters(iEvent.queue(), n, n, n, n, n, n, n, (*counts_)[1]);
+      ::reco::CaloClusterSoAMultiView layerClusters;
+      for (const auto& token : layerClustersTokens_) {
+        layerClusters.addView(iEvent.get(token).const_view());
+      }
       algo_.run(iEvent.queue(),
                 zLimitEm,
-                iEvent.get(layerClustersToken_).const_view(),
+                layerClusters,
                 iEvent.get(layerClustersClusteringToken_).const_view(),
                 tracksters.view());
       iEvent.emplace(trackstersToken_, std::move(tracksters));
@@ -76,13 +84,17 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
 
     static void fillDescriptions(edm::ConfigurationDescriptions& descriptions) {
       edm::ParameterSetDescription desc;
-      desc.add<edm::InputTag>("hgcalLayerClustersSoA", edm::InputTag("hgcalSoAMergeLayerClusters"));
+      desc.add<std::vector<edm::InputTag>>("hgcalLayerClustersSoA",
+                                           {edm::InputTag("hgcalSoALayerClustersEE"),
+                                            edm::InputTag("hgcalSoALayerClustersHSi"),
+                                            edm::InputTag("hgcalSoALayerClustersHSci")})
+          ->setComment("In the order of the layerClusters of hgcalMergeLayerClusters.");
       desc.add<edm::InputTag>("hgcalLayerClustersTrackstersSoA", edm::InputTag("ticlCLUEstering"));
       descriptions.addWithDefaultLabel(desc);
     }
 
   private:
-    const device::EDGetToken<reco::CaloClusterDeviceCollection> layerClustersToken_;
+    std::vector<device::EDGetToken<reco::CaloClusterDeviceCollection>> layerClustersTokens_;
     const device::EDGetToken<HGCalSoALayerClustersExtraDeviceCollection> layerClustersClusteringToken_;
     const device::EDPutToken<ticl::TracksterDeviceCollection> trackstersToken_;
     const edm::ESGetToken<TICLGeomHost, CaloGeometryRecord> ticlGeomToken_;

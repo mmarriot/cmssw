@@ -6,7 +6,7 @@
 
 #include <xtd/math.h>
 
-#include "DataFormats/CaloRecHit/interface/alpaka/CaloClusterDeviceCollection.h"
+#include "DataFormats/CaloRecHit/interface/CaloClusterSoA.h"
 #include "DataFormats/DetId/interface/DetId.h"
 #include "DataFormats/HGCalReco/interface/TracksterSoA.h"
 #include "DataFormats/HGCalReco/interface/alpaka/TracksterDeviceCollection.h"
@@ -25,7 +25,7 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE::ticl {
   // in energyThresholdComment.
   struct TracksterModelContext {
     ::ticl::TracksterSoA::ConstView tracksters;
-    reco::CaloClusterDeviceCollection::ConstView layerClusters;
+    ::reco::CaloClusterSoAMultiView layerClusters;
     uint32_t layersPerEndcap;
     float energyThreshold;
   };

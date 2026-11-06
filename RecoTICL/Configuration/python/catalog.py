@@ -281,26 +281,16 @@ _SPECS = [
         ),
         external_inputs=("muonSrc",),
     ),
-    # The CLUEstering iteration: the layer clusters merged on the device (HGCAL local reco) are clustered into
+    # The CLUEstering iteration: the device layer clusters of the HGCAL components (local reco) are clustered into
     # tracksters with CLUEstering, the tracksters are built on the device and converted to ticl::Trackster. The
     # portable modules are keyed by their @alpaka type, as module.type_() gives it.
-    ModuleSpec(
-        key="HGCalSoAMergeLayerClustersProducer@alpaka",
-        cfi_module="RecoTICL.LayerClustering.hgCalSoAMergeLayerClustersProducer_cfi",
-        cfi_symbol="hgCalSoAMergeLayerClustersProducer",
-        produces=(Product(T_CALOCLUSTERS_SOA),),
-        consumes=(
-            Consumed("hgcalLayerClustersSoA", T_CALOCLUSTERS_SOA, vector=True),
-        ),
-        backends=("cpu", "gpu"),
-    ),
     ModuleSpec(
         key="HGCalCLUEsteringTrackstersProducer@alpaka",
         cfi_module="RecoTICL.PatternRecognition.hgCalCLUEsteringTrackstersProducer_cfi",
         cfi_symbol="hgCalCLUEsteringTrackstersProducer",
         produces=(Product(T_LC_CLUSTERING_SOA),),
         consumes=(
-            Consumed("hgcalLayerClustersSoA", T_CALOCLUSTERS_SOA),
+            Consumed("hgcalLayerClustersSoA", T_CALOCLUSTERS_SOA, vector=True),
         ),
         backends=("cpu", "gpu"),
     ),
@@ -310,7 +300,7 @@ _SPECS = [
         cfi_symbol="hgCalSoATrackstersProducer",
         produces=(Product(T_TRACKSTERS_SOA),),
         consumes=(
-            Consumed("hgcalLayerClustersSoA", T_CALOCLUSTERS_SOA),
+            Consumed("hgcalLayerClustersSoA", T_CALOCLUSTERS_SOA, vector=True),
             Consumed("hgcalLayerClustersTrackstersSoA", T_LC_CLUSTERING_SOA),
         ),
         backends=("cpu", "gpu"),
@@ -341,13 +331,13 @@ _SPECS = [
         consumes=(Consumed("tracksters", T_TRACKSTERS_SOA),),
         backends=("cpu", "gpu"),
     ),
-    # The other PID models of the device tracksters, which also read the merged layer clusters.
+    # The other PID models of the device tracksters, which also read the device layer clusters.
     *[ModuleSpec(
         key="Trackster%sInferenceProducer@alpaka" % model,
         cfi_module="RecoTICL.Inference.trackster%sInferenceProducer_cfi" % model,
         cfi_symbol="trackster%sInferenceProducer" % model,
         produces=(Product(T_TRACKSTERS_SOA),),
-        consumes=(Consumed("tracksters", T_TRACKSTERS_SOA), Consumed("layerClusters", T_CALOCLUSTERS_SOA)),
+        consumes=(Consumed("tracksters", T_TRACKSTERS_SOA), Consumed("layerClusters", T_CALOCLUSTERS_SOA, vector=True)),
         backends=("cpu", "gpu"),
     ) for model in LAYER_CLUSTER_MODELS],
     ModuleSpec(
@@ -377,7 +367,6 @@ GPU_CAPABLE = frozenset([
     "HGCalSoARecHitsProducer",
     "HGCalCLUEsteringLayerClustersProducer",
     "HGCalSoALayerClustersProducer",
-    "HGCalSoAMergeLayerClustersProducer",
     "HGCalCLUEsteringTrackstersProducer",
     "HGCalSoATrackstersProducer",
     "SuperclusteringDNNProducer",

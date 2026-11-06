@@ -7,6 +7,7 @@ import sys
 
 from RecoTICL.Configuration.model import TICLConfig
 from RecoTICL.Configuration.presets import v6
+from RecoTICL.Configuration.target import TARGETS
 from RecoTICL.Configuration.tracksterInference_cff import makeTracksterInference
 
 # model -> arguments of device_pid, and whether the module reads the layer clusters
@@ -51,7 +52,7 @@ def main():
         pid = modules["hltTiclSoATrackstersPID"]
         check(pid.tracksters.value() == "hltTiclSoATracksters", "%s: HLT reads %s" % (model, pid.tracksters.value()))
         if reads_clusters:
-            check(pid.layerClusters.value() == "hltHgcalSoAMergeLayerClusters", model + ": HLT layer clusters")
+            check(tuple(pid.layerClusters.value()) == TARGETS["HLT"].lc_soa_components, model + ": HLT layer clusters")
 
     # the preset: another model replaces the module, and the configuration still validates
     config = v6()

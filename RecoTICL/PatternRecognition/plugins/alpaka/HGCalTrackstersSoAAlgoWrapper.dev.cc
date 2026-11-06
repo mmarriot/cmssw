@@ -138,7 +138,7 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
     struct KernelTracksterProperties {
       ALPAKA_FN_ACC void operator()(const Acc1D& acc,
                                     float zLimitEm,
-                                    reco::CaloClusterDeviceCollection::ConstView layerClusters,
+                                    ::reco::CaloClusterSoAMultiView layerClusters,
                                     ticl::TracksterDeviceCollection::View tracksters) const {
         constexpr auto block = alpaka::hierarchy::Threads{};
         auto& s = alpaka::declareSharedVar<TracksterSums, __COUNTER__>(acc);
@@ -395,7 +395,7 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
 
   void HGCalTrackstersSoAAlgoWrapper::run(Queue& queue,
                                           float zLimitEm,
-                                          reco::CaloClusterDeviceCollection::ConstView layerClusters,
+                                          ::reco::CaloClusterSoAMultiView layerClusters,
                                           HGCalSoALayerClustersExtraDeviceCollection::ConstView layerClustersClustering,
                                           ticl::TracksterDeviceCollection::View tracksters) const {
     // the layer clusters of the first trackster start at 0, also when there is no trackster

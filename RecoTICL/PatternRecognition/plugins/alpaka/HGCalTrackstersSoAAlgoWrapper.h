@@ -2,7 +2,7 @@
 #define RecoTICL_PatternRecognition_plugins_alpaka_HGCalTrackstersSoAAlgoWrapper_h
 
 #include "DataFormats/HGCalReco/interface/alpaka/TracksterDeviceCollection.h"
-#include "DataFormats/CaloRecHit/interface/alpaka/CaloClusterDeviceCollection.h"
+#include "DataFormats/CaloRecHit/interface/CaloClusterSoA.h"
 #include "DataFormats/HGCalReco/interface/alpaka/HGCalSoALayerClustersExtraDeviceCollection.h"
 #include "HeterogeneousCore/AlpakaInterface/interface/config.h"
 
@@ -18,7 +18,7 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
     // order, and the results at the rounding level, vary from run to run.
     void run(Queue& queue,
              float zLimitEm,
-             reco::CaloClusterDeviceCollection::ConstView layerClusters,
+             ::reco::CaloClusterSoAMultiView layerClusters,
              HGCalSoALayerClustersExtraDeviceCollection::ConstView layerClustersClustering,
              ticl::TracksterDeviceCollection::View tracksters) const;
   };

@@ -4,7 +4,7 @@
 #include <array>
 #include <cstdint>
 
-#include "DataFormats/CaloRecHit/interface/alpaka/CaloClusterDeviceCollection.h"
+#include "DataFormats/CaloRecHit/interface/CaloClusterSoA.h"
 #include "DataFormats/HGCalReco/interface/alpaka/HGCalSoALayerClustersExtraDeviceCollection.h"
 #include "HeterogeneousCore/AlpakaInterface/interface/config.h"
 
@@ -41,7 +41,7 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
     // trackster of each layer cluster, the number of tracksters and the number of layer clusters in them.
     void run(Queue& queue,
              const Parameters& parameters,
-             reco::CaloClusterDeviceCollection::ConstView layerClusters,
+             ::reco::CaloClusterSoAMultiView layerClusters,
              HGCalSoALayerClustersExtraDeviceCollection::View layerClustersClustering) const;
   };
 }  // namespace ALPAKA_ACCELERATOR_NAMESPACE

@@ -12,7 +12,9 @@ _SHOWER_SHAPE_PID = "RecoTICL/Inference/data/showerShapePID/mixPID_hi_v1.pt"
 
 
 def makeTracksterInference(*, model="CNN", doPID=True, doRegression=False, batchSize=64,
-                           tracksters="ticlSoATracksters", layerClusters="hgcalSoAMergeLayerClusters",
+                           tracksters="ticlSoATracksters",
+                           layerClusters=("hgcalSoALayerClustersEE", "hgcalSoALayerClustersHSi",
+                                          "hgcalSoALayerClustersHSci"),
                            pidModel=None, regressionModel=None, energyThreshold=1.0,
                            convertToFP16=False, warmupIterations=3):
     if model not in MODELS:
@@ -27,8 +29,8 @@ def makeTracksterInference(*, model="CNN", doPID=True, doRegression=False, batch
         raise ValueError("warmupIterations must fit uint32")
     if not math.isfinite(energyThreshold):
         raise ValueError("energyThreshold must be finite")
-    if not isinstance(layerClusters, (str, cms.InputTag)):
-        raise TypeError("layerClusters must be the merged CaloClusterSoA InputTag")
+    if not isinstance(layerClusters, (list, tuple, cms.VInputTag)):
+        raise TypeError("layerClusters must be the list of the CaloClusterSoA components")
     if pidModel is None:
         pidModel = (_SHOWER_SHAPE_PID if model == "ShowerShape" else
                     f"RecoTICL/Inference/data/trackster_pid_{model.lower()}.pt") if doPID else ""
@@ -40,7 +42,7 @@ def makeTracksterInference(*, model="CNN", doPID=True, doRegression=False, batch
         raise ValueError("An enabled regression task requires a nonempty regressionModel path")
     name = "trackster" + model + "InferenceProducer"
     default = getattr(importlib.import_module("RecoTICL.Inference." + name + "_cfi"), name)
-    inputs = dict(layerClusters=layerClusters) if model in LAYER_CLUSTER_MODELS else {}
+    inputs = dict(layerClusters=cms.VInputTag(*layerClusters)) if model in LAYER_CLUSTER_MODELS else {}
     return default.clone(tracksters=tracksters, pidModel=pidModel, regressionModel=regressionModel, doPID=doPID,
                          doRegression=doRegression, batchSize=batchSize, convertToFP16=convertToFP16,
                          warmupIterations=warmupIterations, energyThreshold=energyThreshold, **inputs)

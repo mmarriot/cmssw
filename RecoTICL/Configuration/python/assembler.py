@@ -42,11 +42,10 @@ def step_task_name(name):
 
 def iteration_labels(it, target):
     """The labels of the modules of iteration ``it`` whose backend the iteration selects: the cluster filter and the
-    tracksters, or for CLUEstering its device modules, with the merge on the device when its step schedules it."""
+    tracksters, or for CLUEstering its device modules."""
     if it.pattern_type == "CLUEstering":
-        merge = [target.merged_lc_soa] if target.merged_lc_soa_cfi is not None else []
         pid = [target.soa_pid_tracksters_label] if it.device_pid is not None else []
-        return merge + [target.cluestering_label, target.soa_tracksters_label] + pid
+        return [target.cluestering_label, target.soa_tracksters_label] + pid
     return [target.filter_label(it.name), target.trackster_label(it.name)]
 
 
@@ -143,20 +142,25 @@ def _build_trackster(it, flabel, seed_label, prev_trackster, target):
 
 
 def _build_cluestering(it, target):
-    """The modules of a CLUEstering iteration as [(label, module)]: CLUEstering on the layer clusters merged on the
-    device, the tracksters built on the device, their PID on the device when the iteration has one, and
+    """The modules of a CLUEstering iteration as [(label, module)]: CLUEstering on the device layer clusters of the
+    HGCAL components, the tracksters built on the device, their PID on the device when the iteration has one, and
     their conversion to ticl::Trackster with the mask of their layer clusters."""
-    if target.merged_lc is not None and target.merged_lc_soa is None:
-        raise PyTICLError("iteration %r: target %r has no layer clusters merged on the device for CLUEstering"
+    if target.merged_lc is not None and target.lc_soa_components is None:
+        raise PyTICLError("iteration %r: target %r has no device layer clusters for CLUEstering"
                           % (it.name, target.name))
-    lc_soa = {} if target.merged_lc_soa is None else dict(hgcalLayerClustersSoA=cms.InputTag(target.merged_lc_soa))
-    clustering = _cfi_default("HGCalCLUEsteringTrackstersProducer@alpaka").clone(**lc_soa, **it.pattern_params)
+
+    def lc_soa():
+        if target.lc_soa_components is None:
+            return {}
+        return dict(hgcalLayerClustersSoA=cms.VInputTag(*target.lc_soa_components))
+
+    clustering = _cfi_default("HGCalCLUEsteringTrackstersProducer@alpaka").clone(**lc_soa(), **it.pattern_params)
     soa = _cfi_default("HGCalSoATrackstersProducer@alpaka").clone(
-        hgcalLayerClustersTrackstersSoA=cms.InputTag(target.cluestering_label), **lc_soa)
+        hgcalLayerClustersTrackstersSoA=cms.InputTag(target.cluestering_label), **lc_soa())
     modules = [(target.cluestering_label, clustering), (target.soa_tracksters_label, soa)]
     if it.device_pid is not None:
-        merged = {} if target.merged_lc_soa is None else dict(layerClusters=target.merged_lc_soa)
-        pid = makeTracksterInference(tracksters=target.soa_tracksters_label, **merged, **it.device_pid)
+        clusters = {} if target.lc_soa_components is None else dict(layerClusters=target.lc_soa_components)
+        pid = makeTracksterInference(tracksters=target.soa_tracksters_label, **clusters, **it.device_pid)
         modules.append((target.soa_pid_tracksters_label, pid))
     ov = dict(src=cms.InputTag(device_tracksters_label(it, target)))
     if target.initial_mask_tag() is not None:
@@ -365,11 +369,6 @@ def assemble(cfg):
             for label, module in _build_cluestering(it, target):
                 m[label] = module
                 labels.append(label)
-            if target.merged_lc_soa_cfi is not None:
-                # the step schedules the merge on the device, which only CLUEstering reads
-                cfi = __import__(target.merged_lc_soa_cfi, fromlist=[target.merged_lc_soa])
-                m[target.merged_lc_soa] = getattr(cfi, target.merged_lc_soa)
-                labels.insert(0, target.merged_lc_soa)
             gname = target.gname("step", it.name)
             mkgroup(gname, *labels)
             step_groups.append(gname)

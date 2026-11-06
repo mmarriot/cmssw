@@ -101,7 +101,7 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
     struct KernelSelectPoints {
       ALPAKA_FN_ACC void operator()(const Acc1D& acc,
                                     uint32_t minSiliconCells,
-                                    reco::CaloClusterDeviceCollection::ConstView layerClusters,
+                                    ::reco::CaloClusterSoAMultiView layerClusters,
                                     HGCalSoALayerClustersExtraDeviceCollection::View layerClustersClustering,
                                     uint32_t* isPoint,
                                     ComponentExtents* extents) const {
@@ -127,7 +127,7 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
                                     float rhocEtaExponent,
                                     float rhocPivotRadius,
                                     std::array<float, kComponents> relativeSigmaT,
-                                    reco::CaloClusterDeviceCollection::ConstView layerClusters,
+                                    ::reco::CaloClusterSoAMultiView layerClusters,
                                     const uint32_t* isPoint,
                                     const uint32_t* pointEnd,
                                     PointsDeviceCollection::View points,
@@ -195,7 +195,7 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
                                     float maxDistance,
                                     int32_t layerReach,
                                     std::array<float, kComponents> relativeSigmaT,
-                                    reco::CaloClusterDeviceCollection::ConstView layerClusters,
+                                    ::reco::CaloClusterSoAMultiView layerClusters,
                                     const uint32_t* isPoint,
                                     const uint32_t* pointEnd,
                                     const ComponentExtents* extents,
@@ -295,9 +295,8 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
   void HGCalCLUEsteringTrackstersAlgoWrapper::run(
       Queue& queue,
       const Parameters& parameters,
-      reco::CaloClusterDeviceCollection::ConstView layerClusters,
+      ::reco::CaloClusterSoAMultiView layerClusters,
       HGCalSoALayerClustersExtraDeviceCollection::View layerClustersClustering) const {
-
     auto nTracksters = make_device_view<unsigned int>(queue, layerClustersClustering.numberOfTrackstersScalar());
     alpaka::memset(queue, nTracksters, 0x0);
     auto nVertices = make_device_view<unsigned int>(queue, layerClustersClustering.numberOfVerticesScalar());

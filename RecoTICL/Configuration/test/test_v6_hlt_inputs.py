@@ -9,7 +9,7 @@ import FWCore.ParameterSet.Config as cms
 from RecoTICL.Configuration import presets
 
 OFFLINE_INPUTS = {"generalTracks", "muons1stStep", "electronGsfTracks", "mtdSoA", "hgcalMergeLayerClusters",
-                  "hgcalSoAMergeLayerClusters"}
+                  "hgcalSoALayerClustersEE", "hgcalSoALayerClustersHSi", "hgcalSoALayerClustersHSci"}
 
 
 def input_labels(pset, prefix=""):

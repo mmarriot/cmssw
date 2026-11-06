@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""The layer clusters merged on the device are in the order of the merged layer clusters of the host, offline and at
-HLT: a CLUEstering trackster indexes its layer clusters in the device merge, so the host merge reads the same SoA
+"""The device modules read the HGCAL components in the order of the merged layer clusters of the host, offline and at
+HLT: a CLUEstering trackster indexes its layer clusters across the components, so the host merge reads the same SoA
 collections in the same order."""
 
 import sys
 
+from RecoTICL.Configuration import presets
 from RecoTICL.Configuration.target import TARGETS
 
 
@@ -29,20 +30,31 @@ def _label(tag):
     return tag.getModuleLabel() if hasattr(tag, "getModuleLabel") else str(tag).split(":")[0]
 
 
-def check(name, get, host_merge, device_merge):
-    host = [_label(tag) for tag in get(host_merge).layerClustersSoA]
-    device = [_label(tag) for tag in get(device_merge).hgcalLayerClustersSoA]
+def check(name, host_merge, reader, labels):
+    host = [_label(tag) for tag in host_merge.layerClustersSoA]
+    device = [_label(tag) for tag in labels]
     if host != device:
-        print("FAIL [%s]: %s merges %s; %s merges %s" % (name, host_merge, host, device_merge, device))
+        print("FAIL [%s]: the host merges %s; %s reads %s" % (name, host, reader, device))
         return 1
-    print("OK [%s]: %s and %s merge %s in the same order" % (name, host_merge, device_merge, device))
+    print("OK [%s]: %s reads %s in the order of the host merge" % (name, reader, device))
     return 0
 
 
+def readers(assembled, target):
+    pid = assembled.modules[target.soa_pid_tracksters_label]
+    return [(target.cluestering_label, assembled.modules[target.cluestering_label].hgcalLayerClustersSoA),
+            (target.soa_tracksters_label, assembled.modules[target.soa_tracksters_label].hgcalLayerClustersSoA),
+            (target.soa_pid_tracksters_label, pid.layerClusters)]
+
+
 def main():
-    rc = check("offline", _offline_module, "hgcalMergeLayerClusters", "hgcalSoAMergeLayerClusters")
-    hlt = TARGETS["HLT"]
-    rc |= check("HLT", _hlt_module, hlt.merged_lc, hlt.merged_lc_soa)
+    rc = 0
+    for name, host_merge in (("offline", _offline_module("hgcalMergeLayerClusters")),
+                             ("HLT", _hlt_module(TARGETS["HLT"].merged_lc))):
+        config = presets.v6(target=name)
+        config.iterations[0].device_pid = dict(model="CNN")
+        for reader, labels in readers(config.assemble(), TARGETS[name]):
+            rc |= check(name, host_merge, reader, labels)
     return rc
 
 

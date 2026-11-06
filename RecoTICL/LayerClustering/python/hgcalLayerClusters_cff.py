@@ -24,7 +24,6 @@ from RecoTICL.LayerClustering.hgCalSoARecHitsProducer_cfi import hgCalSoARecHits
 from RecoTICL.LayerClustering.hgCalCLUEsteringLayerClustersProducer_cfi import hgCalCLUEsteringLayerClustersProducer
 from RecoTICL.LayerClustering.hgCalSoALayerClustersProducer_cfi import hgCalSoALayerClustersProducer
 from RecoTICL.LayerClustering.hgCalLayerClustersFromSoAProducer_cfi import hgCalLayerClustersFromSoAProducer
-from RecoTICL.LayerClustering.hgCalSoAMergeLayerClustersProducer_cfi import hgCalSoAMergeLayerClustersProducer
 from RecoTICL.LayerClustering.hgCalMergedLayerClustersFromSoAProducer_cfi import hgCalMergedLayerClustersFromSoAProducer
 
 # EE/FH/BH share the same silicon energy-threshold constants. The scintillator
@@ -123,26 +122,21 @@ _v19SiSoAParams = dict(
 for _soa in (hgcalSoARecHitsEE, hgcalSoARecHitsHSi, hgcalSoARecHitsHSci):
     phase2_hgcalV19.toModify(_soa, **_v19SiSoAParams)
 
-# The HGCAL components in the order in which their layer clusters are merged, on the device and by
-# hgcalMergeLayerClusters: the two merged collections then index the same layer clusters
+# The HGCAL components in the order in which hgcalMergeLayerClusters merges them. The device modules read the
+# components through a multi view in the same order, so that both index the same layer clusters
 _mergedComponents = ['EE', 'HSi', 'HSci']
-
-# The layer clusters of the HGCAL components merged on the device
-hgcalSoAMergeLayerClusters = hgCalSoAMergeLayerClustersProducer.clone(
-    hgcalLayerClustersSoA = ['hgcalSoALayerClusters' + component for component in _mergedComponents])
 
 hgcalLayerClustersAlpakaTask = cms.Task(
     hgcalSoARecHitsEE,   hgcalCLUEsteringEE,   hgcalSoALayerClustersEE,
     hgcalSoARecHitsHSi,  hgcalCLUEsteringHSi,  hgcalSoALayerClustersHSi,
     hgcalSoARecHitsHSci, hgcalCLUEsteringHSci, hgcalSoALayerClustersHSci,
-    hgcalSoAMergeLayerClusters,
 )
 hgcalLayerClustersHFNoseAlpakaTask = cms.Task(
     hgcalSoARecHitsHFNose, hgcalCLUEsteringHFNose, hgcalSoALayerClustersHFNose,
 )
 
 # The legacy layer clusters of the HGCAL components, converted from their SoA layer clusters into one merged collection
-# in one step (same order as hgcalSoAMergeLayerClusters, so that both merged collections index the same layer clusters)
+# in one step
 hgcalMergeLayerClusters = hgCalMergedLayerClustersFromSoAProducer.clone(
     layerClustersSoA = ['hgcalSoALayerClusters' + component for component in _mergedComponents],
     hgcalRecHitsSoA = ['hgcalSoARecHits' + component for component in _mergedComponents],

@@ -226,7 +226,7 @@ ticl_barrel.toModify(mergeTICLTask, func=lambda x : x.add(ticlLayerTileBarrelTas
 from RecoTICL.Configuration.presets import v6 as _v6
 _ticlV6Modules = _v6().assemble().modules
 ticlTracksterInterpretations = _ticlV6Modules["ticlTracksterInterpretations"]
-# TICLv6: the first iteration is CLUEstering on the layer clusters merged on the device, and the Recovery runs on the
+# TICLv6: the first iteration is CLUEstering on the device layer clusters, and the Recovery runs on the
 # layer clusters that its tracksters do not use.
 ticlCLUEstering = _ticlV6Modules["ticlCLUEstering"]
 ticlSoATracksters = _ticlV6Modules["ticlSoATracksters"]

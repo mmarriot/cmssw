@@ -63,6 +63,8 @@ namespace reco {
   using CaloClusterSoA = CaloClusterSoALayout<>;
   using CaloClusterSoAView = CaloClusterSoA::View;
   using CaloClusterSoAConstView = CaloClusterSoA::ConstView;
+  // The layer clusters of CE-E, CE-H Si and CE-H Sci, read as one collection
+  using CaloClusterSoAMultiView = CaloClusterSoA::ConstMultiView<3>;
 
 }  // namespace reco
 

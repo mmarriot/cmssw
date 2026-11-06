@@ -72,7 +72,6 @@ namespace {
     TestEvent(Queue& queue, std::vector<Cluster> const& clusters, std::vector<Input> const& inputs)
         : nTracksters_(inputs.size()),
           nVertices_(countVertices(inputs)),
-          clusters_(queue, clusters.size(), clusters.size(), clusters.size(), clusters.size()),
           tracksters_(queue,
                       nTracksters_,
                       nTracksters_,
@@ -82,21 +81,27 @@ namespace {
                       nTracksters_,
                       nTracksters_,
                       nVertices_) {
-      ::reco::CaloClusterHostCollection clustersHost(
-          queue, clusters.size(), clusters.size(), clusters.size(), clusters.size());
-      clustersHost.zeroInitialise();
-      auto clusterView = clustersHost.view();
-      for (uint32_t i = 0; i < clusters.size(); ++i) {
-        auto position = clusterView.position()[i];
-        position.x() = clusters[i].x;
-        position.y() = clusters[i].y;
-        position.z() = clusters[i].z;
-        position.layer() = clusters[i].layer;
-        position.cells() = clusters[i].cells;
-        clusterView.energy()[i].energy() = clusters[i].energy;
-        clusterView.indexes()[i].seedID() = clusters[i].seed;
+      // Three components, as in the event: the layer clusters of a trackster are spread over them
+      for (uint32_t k = 0; k < kComponents; ++k) {
+        const uint32_t begin = clusters.size() * k / kComponents;
+        const uint32_t size = clusters.size() * (k + 1) / kComponents - begin;
+        ::reco::CaloClusterHostCollection clustersHost(queue, size, size, size, size);
+        clustersHost.zeroInitialise();
+        auto clusterView = clustersHost.view();
+        for (uint32_t i = 0; i < size; ++i) {
+          const Cluster& cluster = clusters[begin + i];
+          auto position = clusterView.position()[i];
+          position.x() = cluster.x;
+          position.y() = cluster.y;
+          position.z() = cluster.z;
+          position.layer() = cluster.layer;
+          position.cells() = cluster.cells;
+          clusterView.energy()[i].energy() = cluster.energy;
+          clusterView.indexes()[i].seedID() = cluster.seed;
+        }
+        clusters_.emplace_back(queue, size, size, size, size);
+        alpaka::memcpy(queue, clusters_.back().buffer(), clustersHost.buffer());
       }
-      alpaka::memcpy(queue, clusters_.buffer(), clustersHost.buffer());
 
       ::ticl::TracksterHostCollection host = makeHost(queue);
       host.zeroInitialise();
@@ -124,7 +129,11 @@ namespace {
     }
 
     TracksterModelContext context(float threshold) const {
-      return {tracksters_.const_view(), clusters_.const_view(), kLayersPerEndcap, threshold};
+      ::reco::CaloClusterSoAMultiView clusters;
+      for (const auto& component : clusters_) {
+        clusters.addView(component.const_view());
+      }
+      return {tracksters_.const_view(), clusters, kLayersPerEndcap, threshold};
     }
 
     ::ticl::TracksterHostCollection read(Queue& queue) {
@@ -164,7 +173,8 @@ namespace {
 
     uint32_t nTracksters_;
     uint32_t nVertices_;
-    ALPAKA_ACCELERATOR_NAMESPACE::reco::CaloClusterDeviceCollection clusters_;
+    static constexpr uint32_t kComponents = 3;
+    std::vector<ALPAKA_ACCELERATOR_NAMESPACE::reco::CaloClusterDeviceCollection> clusters_;
     TracksterDeviceCollection tracksters_;
   };
 

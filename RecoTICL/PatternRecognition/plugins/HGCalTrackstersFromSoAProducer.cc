@@ -29,9 +29,9 @@
 
 // Converts the tracksters built on the device to ticl::Trackster, in the same order, and masks their layer clusters
 // in a copy of the original layer cluster mask, as TrackstersProducer does. The layer clusters of the tracksters are
-// indices in the merged layer clusters, which index the same layer clusters as hgcalMergeLayerClusters.
+// indices across the components, which index the same layer clusters as hgcalMergeLayerClusters.
 // The PID runs on the host on the converted tracksters, with the inference plugin of TrackstersProducer, and
-// overwrites the probabilities of the device. 
+// overwrites the probabilities of the device.
 class HGCalTrackstersFromSoAProducer
     : public edm::stream::EDProducer<edm::GlobalCache<ticl::TICLONNXGlobalCache>, edm::stream::WatchRuns> {
 public:
@@ -86,7 +86,7 @@ public:
         if (layerCluster >= mask.size()) {
           throw edm::Exception(edm::errors::LogicError)
               << "HGCalTrackstersFromSoAProducer: a trackster uses layer cluster " << layerCluster << " of "
-              << mask.size() << ". The layer clusters must be merged on the device in the order of the legacy ones.";
+              << mask.size() << ". The device modules must read the layer clusters in the order of the legacy ones.";
         }
       }
 

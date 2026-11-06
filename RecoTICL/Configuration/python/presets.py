@@ -148,7 +148,7 @@ def _preset_clue3dbarrel(it):
 
 
 def _preset_cluestering(it):
-    # CLUEstering on the layer clusters merged on the device, with the defaults of the CLUEstering module, and the PID
+    # CLUEstering on the device layer clusters, with the defaults of the CLUEstering module, and the PID
     # cut of CLUE3DHigh on the converted tracksters.
     it.pattern_type = "CLUEstering"
     it.pattern_params = dict()
@@ -346,7 +346,7 @@ def v6(name="v6", target="offline"):
     interp = dict(pluginInferenceAlgoTracksterInferenceByPFN=pfn,
                   pidInferenceAlgo=cms.string("TracksterInferenceByShowerShape"),
                   pluginInferenceAlgoTracksterInferenceByShowerShape=shower_shape_pid("mixPID_fin_v1.onnx"))
-    # The first iteration is CLUEstering on the layer clusters merged on the device, identified from the shower shape
+    # The first iteration is CLUEstering on the device layer clusters, identified from the shower shape
     # and the layer-cluster profile, with the EM score on the scale of the CNN of v5 in every energy bin.
     cfg = TICLConfig(name, target=target).iteration("CLUEstering").preset()
     if cfg.target.name == "offline":

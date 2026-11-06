@@ -173,7 +173,7 @@ class TICLConfig:
         it = self._cur(); it.pattern_type = "FastJet"; it.pattern_params = params; return self
 
     def pattern_cluestering(self, **params):
-        """CLUEstering on the layer clusters merged on the device: no seeding region and no cluster filter, the
+        """CLUEstering on the device layer clusters: no seeding region and no cluster filter, the
         parameters go to the CLUEstering module."""
         it = self._cur(); it.pattern_type = "CLUEstering"; it.pattern_params = params; return self
 

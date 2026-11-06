@@ -24,14 +24,17 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
   class HGCalCLUEsteringTrackstersProducer : public stream::EDProducer<> {
   public:
     HGCalCLUEsteringTrackstersProducer(const edm::ParameterSet& config)
-        : EDProducer(config),
-          layerClustersToken_{consumes(config.getParameter<edm::InputTag>("hgcalLayerClustersSoA"))},
-          layerClustersClusteringToken_{produces()},
-          parameters_{makeParameters(config)} {}
-
+        : EDProducer(config), layerClustersClusteringToken_{produces()}, parameters_{makeParameters(config)} {
+      for (const auto& tag : config.getParameter<std::vector<edm::InputTag>>("hgcalLayerClustersSoA")) {
+        layerClustersTokens_.emplace_back(consumes(tag));
+      }
+    }
 
     void produce(device::Event& iEvent, const device::EventSetup&) override {
-      const auto layerClusters = iEvent.get(layerClustersToken_).const_view();
+      ::reco::CaloClusterSoAMultiView layerClusters;
+      for (const auto& token : layerClustersTokens_) {
+        layerClusters.addView(iEvent.get(token).const_view());
+      }
 
       HGCalSoALayerClustersExtraDeviceCollection layerClustersClustering(iEvent.queue(),
                                                                          layerClusters.position().metadata().size());
@@ -42,7 +45,11 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
 
     static void fillDescriptions(edm::ConfigurationDescriptions& descriptions) {
       edm::ParameterSetDescription desc;
-      desc.add<edm::InputTag>("hgcalLayerClustersSoA", edm::InputTag("hgcalSoAMergeLayerClusters"));
+      desc.add<std::vector<edm::InputTag>>("hgcalLayerClustersSoA",
+                                           {edm::InputTag("hgcalSoALayerClustersEE"),
+                                            edm::InputTag("hgcalSoALayerClustersHSi"),
+                                            edm::InputTag("hgcalSoALayerClustersHSci")})
+          ->setComment("In the order of the layerClusters of hgcalMergeLayerClusters.");
       desc.add<float>("deltac", 1.)->setComment("Density radius, in the clustering coordinates.");
       desc.add<float>("rhoc", 0.255)->setComment("Minimum energy density of a seed [GeV].");
       desc.add<float>("outlierDistance", 2.1155)->setComment("Maximum distance to the nearest higher.");
@@ -86,7 +93,7 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
       return parameters;
     }
 
-    const device::EDGetToken<reco::CaloClusterDeviceCollection> layerClustersToken_;
+    std::vector<device::EDGetToken<reco::CaloClusterDeviceCollection>> layerClustersTokens_;
     const device::EDPutToken<HGCalSoALayerClustersExtraDeviceCollection> layerClustersClusteringToken_;
     const HGCalCLUEsteringTrackstersAlgoWrapper::Parameters parameters_;
     const HGCalCLUEsteringTrackstersAlgoWrapper algo_{};

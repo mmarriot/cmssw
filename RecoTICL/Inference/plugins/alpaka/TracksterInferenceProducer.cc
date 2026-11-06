@@ -6,10 +6,12 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "CondFormats/HGCalObjects/interface/TICLGeomHost.h"
 #include "CondFormats/HGCalObjects/interface/TICLGeomLayersHost.h"
 #include "CondFormats/HGCalObjects/interface/TICLGeomLookupHost.h"
+#include "DataFormats/CaloRecHit/interface/alpaka/CaloClusterDeviceCollection.h"
 #include "FWCore/Framework/interface/Run.h"
 #include "FWCore/ParameterSet/interface/ConfigurationDescriptions.h"
 #include "FWCore/ParameterSet/interface/ParameterSet.h"
@@ -53,7 +55,9 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
       if constexpr (M::layerClusters) {
         const edm::ESInputTag geometry("",
                                        config.getParameter<std::string>("detector") == "Barrel" ? "withBarrel" : "");
-        layerClustersToken_ = consumes(config.getParameter<edm::InputTag>("layerClusters"));
+        for (const auto& tag : config.getParameter<std::vector<edm::InputTag>>("layerClusters")) {
+          layerClustersTokens_.emplace_back(consumes(tag));
+        }
         ticlGeomToken_ = esConsumes<TICLGeomHost, CaloGeometryRecord, edm::Transition::BeginRun>(geometry);
         ticlGeomLookupToken_ = esConsumes<TICLGeomLookupHost, CaloGeometryRecord, edm::Transition::BeginRun>(geometry);
         ticlGeomLayersToken_ =
@@ -75,7 +79,11 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
       edm::ParameterSetDescription desc;
       desc.add<edm::InputTag>("tracksters", edm::InputTag("ticlSoATracksters"));
       if constexpr (M::layerClusters) {
-        desc.add<edm::InputTag>("layerClusters", edm::InputTag("hgcalSoAMergeLayerClusters"));
+        desc.add<std::vector<edm::InputTag>>("layerClusters",
+                                             {edm::InputTag("hgcalSoALayerClustersEE"),
+                                              edm::InputTag("hgcalSoALayerClustersHSi"),
+                                              edm::InputTag("hgcalSoALayerClustersHSci")})
+            ->setComment("In the order of the layerClusters of hgcalMergeLayerClusters.");
         desc.add<std::string>("detector", "HGCAL");
       }
       // Strings, so that a disabled model needs no file
@@ -166,11 +174,12 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
     }
 
   private:
-    reco::CaloClusterDeviceCollection::ConstView layerClusters(device::Event const& event) const {
-      if constexpr (M::layerClusters)
-        return event.get(layerClustersToken_).const_view();
-      else
-        return {};
+    ::reco::CaloClusterSoAMultiView layerClusters(device::Event const& event) const {
+      ::reco::CaloClusterSoAMultiView layerClusters;
+      for (const auto& token : layerClustersTokens_) {
+        layerClusters.addView(event.get(token).const_view());
+      }
+      return layerClusters;
     }
 
     TracksterModelContext context(device::Event const& event, ::ticl::TracksterSoA::ConstView tracksters) const {
@@ -219,7 +228,7 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
     }
 
     const device::EDGetToken<ticl::TracksterDeviceCollection> trackstersToken_;
-    device::EDGetToken<reco::CaloClusterDeviceCollection> layerClustersToken_;
+    std::vector<device::EDGetToken<reco::CaloClusterDeviceCollection>> layerClustersTokens_;
     edm::ESGetToken<TICLGeomHost, CaloGeometryRecord> ticlGeomToken_;
     edm::ESGetToken<TICLGeomLookupHost, CaloGeometryRecord> ticlGeomLookupToken_;
     edm::ESGetToken<TICLGeomLayersHost, CaloGeometryRecord> ticlGeomLayersToken_;

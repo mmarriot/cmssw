@@ -9,7 +9,7 @@ stages are grouped into ``cms.Task`` (offline) or ``cms.Sequence`` (HLT).
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
 import FWCore.ParameterSet.Config as cms
 
@@ -32,12 +32,10 @@ class Target:
     group_names: Dict[str, str] = field(default_factory=dict)
     # merged layer-cluster module; None -> keep the cfi defaults (offline)
     merged_lc: Optional[str] = None
-    # the same layer clusters merged on the device, read by a CLUEstering iteration; None -> keep the cfi default
-    # (offline). A target that remaps merged_lc must also name this one.
-    merged_lc_soa: Optional[str] = None
-    # the cfi that defines that merge, when the CLUEstering step schedules it (HLT); None -> the merge is in the
-    # local reconstruction (offline)
-    merged_lc_soa_cfi: Optional[str] = None
+    # the device layer clusters read by a CLUEstering iteration, in the order of the components in merged_lc: a
+    # trackster indexes its layer clusters in this order. None -> keep the cfi defaults (offline). A target that
+    # remaps merged_lc must also name these.
+    lc_soa_components: Optional[Tuple[str, ...]] = None
     # labels of the device modules of a CLUEstering iteration: CLUEstering, then the tracksters built on the device
     cluestering_label: str = "ticlCLUEstering"
     soa_tracksters_label: str = "ticlSoATracksters"
@@ -146,8 +144,8 @@ HLT = Target(
         "top": "HLTIterTICLSequence",
     },
     merged_lc="hltMergeLayerClusters",
-    merged_lc_soa="hltHgcalSoAMergeLayerClusters",
-    merged_lc_soa_cfi="HLTrigger.Configuration.HLT_75e33.modules.hltHgcalSoAMergeLayerClusters_cfi",
+    lc_soa_components=("hltHgcalSoALayerClustersProducer", "hltHgcalSoALayerClustersProducerHSci",
+                       "hltHgcalSoALayerClustersProducerHSi"),
     cluestering_label="hltTiclCLUEstering",
     soa_tracksters_label="hltTiclSoATracksters",
     soa_pid_tracksters_label="hltTiclSoATrackstersPID",
