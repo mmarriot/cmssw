@@ -7,6 +7,7 @@
 #include <functional>
 #include <ranges>
 #include <span>
+#include <stdexcept>
 
 #include "DataFormats/SoATemplate/interface/SoACommon.h"
 
@@ -24,6 +25,12 @@
  * when the underlying buffer is large enough to amortize the overhead of 
  * non-contiguous access patterns when iterating over all elements.
  *
+ * The global index is range checked once, in `operator[]`, and the views are stored without
+ * a range check of their own. The view holding an index is found with compile-time indices
+ * into `views_`: a dynamic index would make the compiler copy the kernel arguments of an
+ * Alpaka kernel to local memory, in each thread. `n_` is not needed either, as the offsets of
+ * the unused views are the same as the offset of the last one.
+ *
  */
 
 template <typename Collections, typename Getter, typename ConstView>
@@ -33,10 +40,20 @@ concept IsValidAViewGetter = requires(Getter getter, std::ranges::range_referenc
 
 template <typename ConstView, cms::soa::size_type MaxSize>
 class SoAConstMultiView {
+  using UncheckedView =
+      typename ConstView::Metadata::TypeOf_Layout::template ConstViewTemplate<ConstView::restrictQualify,
+                                                                              cms::soa::RangeChecking::disabled>;
+
 public:
-  using ConstElement = typename ConstView::const_element;
+  using ConstElement = typename UncheckedView::const_element;
   using size_type = cms::soa::size_type;
   constexpr static cms::soa::RangeChecking::Mode rangeChecking = ConstView::rangeChecking;
+
+  // The same call as on a ConstView: multiView.metadata().size()
+  struct Metadata {
+    SOA_HOST_DEVICE SOA_INLINE size_type size() const { return size_; }
+    size_type size_;
+  };
 
   SoAConstMultiView() = default;
 
@@ -81,14 +98,18 @@ public:
     assert(n_ == static_cast<size_type>(sizes.size()));
   }
 
+  void addView(ConstView view) { addView(view, view.metadata().size()); }
+
   void addView(ConstView view, const size_type size) {
-    assert(n_ < MaxSize && "Exceeded maximum number of views");
+    if (n_ >= MaxSize) {
+      throw std::out_of_range("Exceeded maximum number of views in SoAConstMultiView");
+    }
     assert(size <= static_cast<size_type>(view.metadata().size()) && "Provided size exceeds elements in the view");
-    views_[n_] = view;
-    if (n_ == 0) {
-      offsets_[n_] = size;
-    } else {
-      offsets_[n_] = offsets_[n_ - 1] + size;
+    views_[n_] = UncheckedView(view);
+    const size_type end = (n_ == 0 ? 0 : offsets_[n_ - 1]) + size;
+    // the unused views end where the last one does: size() and the lookup do not depend on n_
+    for (size_type i = n_; i < MaxSize; ++i) {
+      offsets_[i] = end;
     }
     n_++;
   }
@@ -96,21 +117,11 @@ public:
   [[nodiscard]] SOA_HOST_DEVICE SOA_INLINE ConstElement
   operator[](cms::soa::detail::IndexWithSourceLocation<rangeChecking> globalIndex) const {
     if constexpr (rangeChecking != cms::soa::RangeChecking::disabled) {
-      if (globalIndex.value_ >= offsets_[n_ - 1] or globalIndex.value_ < 0) {
+      if (globalIndex.value_ >= size() or globalIndex.value_ < 0) {
         SOA_THROW_OUT_OF_RANGE("Index surpasses size total size of SoAConstMultiView", globalIndex, size())
       }
     }
-
-    if constexpr (MaxSize == 1) {
-      return views_[0][globalIndex.value_];
-    } else {
-      if (globalIndex.value_ < offsets_[0]) {
-        return views_[0][globalIndex.value_];
-      }
-
-      const size_type viewIdx = viewIndex(globalIndex.value_);
-      return views_[viewIdx][globalIndex.value_ - offsets_[viewIdx - 1]];
-    }
+    return find<0>(globalIndex.value_, 0);
   }
 
   [[nodiscard]] SOA_HOST_DEVICE SOA_INLINE ConstView
@@ -120,22 +131,27 @@ public:
         SOA_THROW_OUT_OF_RANGE("Out of range index in SoAConstMultiView::view()", i, n_)
       }
     }
-    return views_[i.value_];
+    return ConstView(views_[i.value_]);
   }
 
-  [[nodiscard]] SOA_HOST_DEVICE SOA_INLINE size_type size() const { return offsets_[n_ - 1]; }
+  [[nodiscard]] SOA_HOST_DEVICE SOA_INLINE size_type size() const { return offsets_[MaxSize - 1]; }
   [[nodiscard]] SOA_HOST_DEVICE SOA_INLINE size_type numViews() const { return n_; }
+  [[nodiscard]] SOA_HOST_DEVICE SOA_INLINE Metadata metadata() const { return Metadata{size()}; }
 
 private:
-  SOA_HOST_DEVICE SOA_INLINE size_type viewIndex(const size_type globalIndex) const {
-    size_type viewIdx = 1;
-    for (size_type i = 1; i < MaxSize; ++i) {
-      viewIdx += static_cast<size_type>(n_ > i && globalIndex >= offsets_[i]);
+  template <size_type K>
+  SOA_HOST_DEVICE SOA_INLINE ConstElement find(const size_type globalIndex, const size_type first) const {
+    if constexpr (K + 1 == MaxSize) {
+      return views_[K][globalIndex - first];
+    } else {
+      if (globalIndex < offsets_[K]) {
+        return views_[K][globalIndex - first];
+      }
+      return find<K + 1>(globalIndex, offsets_[K]);
     }
-    return viewIdx;
   }
 
-  std::array<ConstView, MaxSize> views_{};
+  std::array<UncheckedView, MaxSize> views_{};
   std::array<size_type, MaxSize> offsets_{};
 
   size_type n_{0};

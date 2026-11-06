@@ -1458,6 +1458,7 @@ _SWITCH_ON_TYPE(VALUE_TYPE,                                                     
                 bool OTHER_VIEW_ALIGNMENT_ENFORCEMENT,                                                                 \
                 bool OTHER_RESTRICT_QUALIFY,                                                                           \
                 cms::soa::RangeChecking::Mode OTHER_RANGE_CHECKING>                                                    \
+      SOA_HOST_DEVICE                                                                                                  \
       ConstViewTemplateFreeParams(ConstViewTemplateFreeParams<OTHER_VIEW_ALIGNMENT,                                    \
         OTHER_VIEW_ALIGNMENT_ENFORCEMENT, OTHER_RESTRICT_QUALIFY, OTHER_RANGE_CHECKING> const& other)                  \
         : ConstViewTemplateFreeParams{other.elements_,                                                                 \

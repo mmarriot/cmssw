@@ -12,6 +12,7 @@
 #include <tuple>
 
 #include "DataFormats/SoATemplate/interface/SoACommon.h"
+#include "DataFormats/SoATemplate/interface/SoAConstMultiView.h"
 #include "DataFormats/SoATemplate/interface/SoALayout.h"
 
 #define _DECLARE_SOA_BLOCKS_STREAM_INFO_IMPL(NAME, LAYOUT_NAME)                               \
@@ -126,6 +127,26 @@
 
 #define _DECLARE_MEMBERS_CONST_VIEW_BLOCKS(R, DATA, SPEC) \
   _EXEC_IF_BLOCK(SPEC, _DECLARE_MEMBERS_CONST_VIEW_BLOCKS_IMPL, (_BLOCK_GET_NAME(SPEC), _BLOCK_GET_LAYOUT(SPEC)))
+
+/*
+ * Declare the multi view of each block, its accessor, and how a ConstView by blocks is added to it
+ */
+#define _DECLARE_MEMBERS_CONST_MULTI_VIEW_BLOCKS_IMPL(NAME, LAYOUT_NAME) \
+  MultiViewFor<LayoutFor<LAYOUT_NAME>> BOOST_PP_CAT(NAME, MultiView_);
+
+#define _DECLARE_MEMBERS_CONST_MULTI_VIEW_BLOCKS(R, DATA, SPEC) \
+  _EXEC_IF_BLOCK(SPEC, _DECLARE_MEMBERS_CONST_MULTI_VIEW_BLOCKS_IMPL, (_BLOCK_GET_NAME(SPEC), _BLOCK_GET_LAYOUT(SPEC)))
+
+#define _DECLARE_ACCESSORS_CONST_MULTI_VIEW_BLOCKS_IMPL(NAME) \
+  SOA_HOST_DEVICE SOA_INLINE auto const& NAME() const { return BOOST_PP_CAT(NAME, MultiView_); }
+
+#define _DECLARE_ACCESSORS_CONST_MULTI_VIEW_BLOCKS(R, DATA, SPEC) \
+  _EXEC_IF_BLOCK(SPEC, _DECLARE_ACCESSORS_CONST_MULTI_VIEW_BLOCKS_IMPL, (_BLOCK_GET_NAME(SPEC)))
+
+#define _ADD_VIEW_CONST_MULTI_VIEW_BLOCKS_IMPL(NAME) BOOST_PP_CAT(NAME, MultiView_).addView(view.NAME());
+
+#define _ADD_VIEW_CONST_MULTI_VIEW_BLOCKS(R, DATA, SPEC) \
+  _EXEC_IF_BLOCK(SPEC, _ADD_VIEW_CONST_MULTI_VIEW_BLOCKS_IMPL, (_BLOCK_GET_NAME(SPEC)))
 
 /**
  * Declare the const_cast version of the blocks
@@ -447,6 +468,30 @@
       RANGE_CHECKING>;                                                                                                 \
                                                                                                                        \
     using ConstView = ConstViewTemplate<cms::soa::RestrictQualify::Default, cms::soa::RangeChecking::Default>;         \
+                                                                                                                       \
+    /* Read-only view of several ConstViews by blocks, as if they were one: each block is a SoAConstMultiView */       \
+    /* (or a ConstMultiView, for nested blocks), with its own offsets, so that blocks can have different sizes. */     \
+    template <size_type MAX_SIZE>                                                                                      \
+    class ConstMultiView {                                                                                             \
+      template <typename LayoutT>                                                                                      \
+      static auto multiViewFor() {                                                                                     \
+        if constexpr (requires { LayoutT::blocksNumber; }) {                                                           \
+          return typename LayoutT::template ConstMultiView<MAX_SIZE>{};                                                \
+        } else {                                                                                                       \
+          return SoAConstMultiView<typename LayoutT::ConstView, MAX_SIZE>{};                                           \
+        }                                                                                                              \
+      }                                                                                                                \
+      template <typename LayoutT>                                                                                      \
+      using MultiViewFor = decltype(multiViewFor<LayoutT>());                                                          \
+                                                                                                                       \
+    public:                                                                                                            \
+      void addView(ConstView view) { _ITERATE_ON_ALL(_ADD_VIEW_CONST_MULTI_VIEW_BLOCKS, ~, __VA_ARGS__) }              \
+                                                                                                                       \
+      _ITERATE_ON_ALL(_DECLARE_ACCESSORS_CONST_MULTI_VIEW_BLOCKS, ~, __VA_ARGS__)                                      \
+                                                                                                                       \
+    private:                                                                                                           \
+      _ITERATE_ON_ALL(_DECLARE_MEMBERS_CONST_MULTI_VIEW_BLOCKS, ~, __VA_ARGS__)                                        \
+    };                                                                                                                 \
                                                                                                                        \
     template <CMS_SOA_BYTE_SIZE_TYPE VIEW_ALIGNMENT,                                                                   \
               bool VIEW_ALIGNMENT_ENFORCEMENT,                                                                         \

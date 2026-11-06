@@ -112,6 +112,27 @@ using the macros `SOA_VIEW_METHODS` and `SOA_CONST_VIEW_METHODS`. They work in t
 
 [An example of utilization is shown below.](#examples)
 
+## Multi views
+
+`SoAConstMultiView<ConstView, MaxSize>` reads up to `MaxSize` views of a layout as one collection, through a global
+index, without copying them. `operator[]`, `size()` and `metadata().size()` work as on a `ConstView`. It is small enough
+to be passed by value to a kernel, and `MaxSize` should be exact: each extra view costs instructions in every access.
+
+`SoABlocks` generate `ConstMultiView<MaxSize>`, with one `SoAConstMultiView` per block, so that blocks of different sizes
+and nested blocks work, and the accesses read like those of a `ConstView`:
+
+```cpp
+SoA::ConstMultiView<3> multiView;
+for (const auto& collection : collections)
+  multiView.addView(collection.const_view());
+
+// in a kernel
+for (auto i : uniform_elements(acc, multiView.position().metadata().size()))
+  sum += multiView.position()[i].x() * multiView.energy()[i].energy();
+```
+
+The customized methods of a `ConstView` are not available on a `ConstMultiView`.
+
 ## ROOT serialization and de-serialization
 
 Layouts can be serialized and de-serialized with ROOT. To generate the ROOT dictionary, separate

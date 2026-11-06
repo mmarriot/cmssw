@@ -4,6 +4,12 @@
 #define CATCH_CONFIG_MAIN
 #include <catch2/catch_all.hpp>
 
+#include <array>
+#include <cstdlib>
+#include <memory>
+#include <stdexcept>
+#include <utility>
+
 #include "DataFormats/SoATemplate/interface/SoABlocks.h"
 
 using namespace Catch::Matchers;
@@ -306,5 +312,120 @@ TEST_CASE("SoABlocks") {
       REQUIRE_THAT(nestedBlocksConstView.simple()[i].z(), WithinRel(2.3f));
       REQUIRE_THAT(nestedBlocksConstView.simple()[i].t(), WithinRel(2.4f));
     }
+  }
+}
+
+GENERATE_SOA_LAYOUT(MultiViewPositionTemplate, SOA_COLUMN(float, x), SOA_COLUMN(int, layer))
+GENERATE_SOA_LAYOUT(MultiViewEnergyTemplate, SOA_COLUMN(float, energy))
+GENERATE_SOA_BLOCKS(MultiViewBlocksTemplate,
+                    SOA_BLOCK(position, MultiViewPositionTemplate),
+                    SOA_BLOCK(energy, MultiViewEnergyTemplate))
+GENERATE_SOA_BLOCKS(MultiViewNestedTemplate,
+                    SOA_BLOCK(inner, MultiViewBlocksTemplate),
+                    SOA_BLOCK(extra, MultiViewEnergyTemplate))
+
+namespace {
+  using MultiViewBlocks = MultiViewBlocksTemplate<>;
+  using MultiViewNested = MultiViewNestedTemplate<>;
+  using Buffer = std::unique_ptr<std::byte, decltype(&std::free)>;
+
+  Buffer allocate(std::size_t size) {
+    return Buffer(static_cast<std::byte *>(std::aligned_alloc(MultiViewBlocks::alignment, size)), std::free);
+  }
+
+  // One component: x and energy tell the component and the row apart. The energy block has one row more than the
+  // position block, so that the two blocks have different sizes.
+  struct MultiViewComponent {
+    MultiViewComponent(int size, float first) {
+      const std::array<cms::soa::size_type, 2> sizes{{size, size + 1}};
+      buffer = allocate(MultiViewBlocks::computeDataSize(sizes));
+      blocks = MultiViewBlocks(buffer.get(), sizes);
+      MultiViewBlocks::View view(blocks);
+      for (int i = 0; i < size; ++i) {
+        view.position()[i].x() = first + i;
+        view.position()[i].layer() = i;
+      }
+      for (int i = 0; i < size + 1; ++i) {
+        view.energy()[i].energy() = 2 * (first + i);
+      }
+    }
+
+    Buffer buffer{nullptr, std::free};
+    MultiViewBlocks blocks;
+  };
+
+  struct MultiViewNestedComponent {
+    explicit MultiViewNestedComponent(float first) {
+      const std::array<cms::soa::size_type, 3> sizes{{2, 2, 1}};
+      buffer = allocate(MultiViewNested::computeDataSize(sizes));
+      nested = MultiViewNested(buffer.get(), sizes);
+      MultiViewNested::View view(nested);
+      view.inner().position()[0].x() = first;
+      view.inner().position()[1].x() = first + 1;
+      view.extra()[0].energy() = 2 * first;
+    }
+
+    Buffer buffer{nullptr, std::free};
+    MultiViewNested nested;
+  };
+}  // namespace
+
+TEST_CASE("ConstMultiView of SoABlocks") {
+  SECTION("No views") {
+    MultiViewBlocks::ConstMultiView<3> multiView;
+    REQUIRE(multiView.position().size() == 0);
+    REQUIRE(multiView.position().metadata().size() == 0);
+    REQUIRE_THROWS_AS(multiView.position()[0], std::out_of_range);
+  }
+
+  SECTION("Components, with an empty one, and blocks of different sizes") {
+    MultiViewComponent first(3, 100.f), empty(0, 200.f), last(2, 300.f);
+    MultiViewBlocks::ConstMultiView<3> multiView;
+    multiView.addView(MultiViewBlocks::ConstView(first.blocks));
+    multiView.addView(MultiViewBlocks::ConstView(empty.blocks));
+    multiView.addView(MultiViewBlocks::ConstView(last.blocks));
+
+    REQUIRE(multiView.position().metadata().size() == 5);
+    REQUIRE(multiView.energy().metadata().size() == 8);
+    const std::array<float, 5> x{{100.f, 101.f, 102.f, 300.f, 301.f}};
+    const std::array<int, 5> layer{{0, 1, 2, 0, 1}};
+    for (int i = 0; i < 5; ++i) {
+      REQUIRE(multiView.position()[i].x() == x[i]);
+      REQUIRE(multiView.position()[i].layer() == layer[i]);
+    }
+    const std::array<float, 8> energy{{200.f, 202.f, 204.f, 206.f, 400.f, 600.f, 602.f, 604.f}};
+    for (int i = 0; i < 8; ++i) {
+      REQUIRE(multiView.energy()[i].energy() == energy[i]);
+    }
+    REQUIRE_THROWS_AS(multiView.position()[5], std::out_of_range);
+    REQUIRE(multiView.position().view(2)[1].x() == 301.f);
+  }
+
+  SECTION("Fewer views than the maximum") {
+    MultiViewComponent first(2, 100.f), last(1, 300.f);
+    MultiViewBlocks::ConstMultiView<5> multiView;
+    multiView.addView(MultiViewBlocks::ConstView(first.blocks));
+    multiView.addView(MultiViewBlocks::ConstView(last.blocks));
+    REQUIRE(multiView.position().size() == 3);
+    REQUIRE(multiView.position().numViews() == 2);
+    REQUIRE(multiView.position()[2].x() == 300.f);
+    REQUIRE_THROWS_AS(multiView.position()[3], std::out_of_range);
+  }
+
+  SECTION("More views than the maximum") {
+    MultiViewComponent component(1, 100.f);
+    MultiViewBlocks::ConstMultiView<1> multiView;
+    multiView.addView(MultiViewBlocks::ConstView(component.blocks));
+    REQUIRE_THROWS_AS(multiView.addView(MultiViewBlocks::ConstView(component.blocks)), std::out_of_range);
+  }
+
+  SECTION("Nested blocks") {
+    MultiViewNestedComponent first(100.f), last(300.f);
+    MultiViewNested::ConstMultiView<2> multiView;
+    multiView.addView(MultiViewNested::ConstView(first.nested));
+    multiView.addView(MultiViewNested::ConstView(last.nested));
+    REQUIRE(multiView.inner().position().size() == 4);
+    REQUIRE(multiView.inner().position()[3].x() == 301.f);
+    REQUIRE(multiView.extra()[1].energy() == 600.f);
   }
 }
