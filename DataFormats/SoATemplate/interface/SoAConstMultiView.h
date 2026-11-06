@@ -85,10 +85,10 @@ public:
     assert(n_ < MaxSize && "Exceeded maximum number of views");
     assert(size <= static_cast<size_type>(view.metadata().size()) && "Provided size exceeds elements in the view");
     views_[n_] = view;
-    if (n_ == 0) {
-      offsets_[n_] = size;
-    } else {
-      offsets_[n_] = offsets_[n_ - 1] + size;
+    // teh unused views end where the last one does
+    const size_type end = (n_ == 0 ? 0 : offsets_[n_ - 1]) + size;
+    for (size_type i = n_; i < MaxSize; ++i) {
+      offsets_[i] = end;
     }
     n_++;
   }
@@ -96,21 +96,12 @@ public:
   [[nodiscard]] SOA_HOST_DEVICE SOA_INLINE ConstElement
   operator[](cms::soa::detail::IndexWithSourceLocation<rangeChecking> globalIndex) const {
     if constexpr (rangeChecking != cms::soa::RangeChecking::disabled) {
-      if (globalIndex.value_ >= offsets_[n_ - 1] or globalIndex.value_ < 0) {
+      if (globalIndex.value_ >= size() or globalIndex.value_ < 0) {
         SOA_THROW_OUT_OF_RANGE("Index surpasses size total size of SoAConstMultiView", globalIndex, size())
       }
     }
 
-    if constexpr (MaxSize == 1) {
-      return views_[0][globalIndex.value_];
-    } else {
-      if (globalIndex.value_ < offsets_[0]) {
-        return views_[0][globalIndex.value_];
-      }
-
-      const size_type viewIdx = viewIndex(globalIndex.value_);
-      return views_[viewIdx][globalIndex.value_ - offsets_[viewIdx - 1]];
-    }
+    return find<0>(globalIndex.value_, 0);
   }
 
   [[nodiscard]] SOA_HOST_DEVICE SOA_INLINE ConstView
@@ -123,16 +114,21 @@ public:
     return views_[i.value_];
   }
 
-  [[nodiscard]] SOA_HOST_DEVICE SOA_INLINE size_type size() const { return offsets_[n_ - 1]; }
+  [[nodiscard]] SOA_HOST_DEVICE SOA_INLINE size_type size() const { return offsets_[MaxSize - 1]; }
   [[nodiscard]] SOA_HOST_DEVICE SOA_INLINE size_type numViews() const { return n_; }
 
 private:
-  SOA_HOST_DEVICE SOA_INLINE size_type viewIndex(const size_type globalIndex) const {
-    size_type viewIdx = 1;
-    for (size_type i = 1; i < MaxSize; ++i) {
-      viewIdx += static_cast<size_type>(n_ > i && globalIndex >= offsets_[i]);
+  // Compile-time indices: a runtime index into views_ makes every thread copy the kernel arguments to local memory
+  template <size_type K>
+  SOA_HOST_DEVICE SOA_INLINE ConstElement find(const size_type globalIndex, const size_type first) const {
+    if constexpr (K + 1 == MaxSize) {
+      return views_[K][globalIndex - first];
+    } else {
+      if (globalIndex < offsets_[K]) {
+        return views_[K][globalIndex - first];
+      }
+      return find<K + 1>(globalIndex, offsets_[K]);
     }
-    return viewIdx;
   }
 
   std::array<ConstView, MaxSize> views_{};
