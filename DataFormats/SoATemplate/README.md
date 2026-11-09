@@ -58,6 +58,12 @@ and [`PortableDeviceCollection<T, TDev>`](../../DataFormats/Portable/README.md#p
 Specifically, it exposes:
 - the columns as an `std::tuple<std::span<T>...>` accessible via `descriptor.buff`
 - the corresponding column types as an `std::tuple<cms::soa::SoAColumnType>` through `descriptor.columnTypes`.
+- the corresponding column names as a `static constexpr std::array<std::string_view, num_cols>` through `descriptor.columnNames`.
+- the number of elements of the described view through `descriptor.elements`.
+
+For an SoA by blocks, the descriptor exposes the descriptors of its direct blocks in `descriptor.buff`, and their names as a
+`static constexpr std::array<std::string_view, blocksNumber>` through `descriptor.blockNames`. Note that
+`Descriptor::blocksNumber` counts only the direct blocks, while the layout's `blocksNumber` counts all the nested blocks.
 
 ## Metadata subclass
 

@@ -76,6 +76,13 @@
   <use name="DataFormats/SoATemplate"/>
 </bin>
 
+<bin file="SoADescriptor_t.cc" name="SoADescriptor_t">
+  <use name="boost"/>
+  <use name="catch2"/>
+  <use name="eigen"/>
+  <use name="DataFormats/SoATemplate"/>
+</bin>
+
 <bin file="AssociationMapSoA_t.cc" name="SoAMap">
   <use name="boost"/>
   <use name="catch2"/>
