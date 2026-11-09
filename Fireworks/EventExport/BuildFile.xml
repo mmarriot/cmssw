@@ -1,0 +1,9 @@
+<use name="DataFormats/NanoAOD"/>
+<use name="DataFormats/SoATemplate"/>
+<use name="FWCore/Framework"/>
+<use name="FWCore/ParameterSet"/>
+<use name="FWCore/Utilities"/>
+<export>
+  <use name="DataFormats/NanoAOD"/>
+  <use name="DataFormats/SoATemplate"/>
+</export>
