@@ -89,6 +89,11 @@ public:
   CornersVec getCorners(const DetId& id) const;
   CornersVec get8Corners(const DetId& id) const;
   CornersVec getNewCorners(const DetId& id, bool debug = false) const;
+  /// Returns the outline of the front face of this cell, counter-clockwise in global x-y: for silicon
+  /// cells of geometries with wafers from file HGCalDDDConstants::cellOutline (the shape of partial,
+  /// truncated, extended and corner cells; empty where it has none), otherwise the corners of
+  /// getNewCorners (the four corners of a tile); empty for an invalid id
+  std::vector<GlobalPoint> getCellOutline(const DetId& id) const;
 
   // Get neighbor in z along a direction
   DetId neighborZ(const DetId& idin, const GlobalVector& p) const;

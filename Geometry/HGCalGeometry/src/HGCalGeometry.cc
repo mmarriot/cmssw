@@ -508,6 +508,38 @@ HGCalGeometry::CornersVec HGCalGeometry::getNewCorners(const DetId& detid, bool 
   return co;
 }
 
+std::vector<GlobalPoint> HGCalGeometry::getCellOutline(const DetId& detid) const {
+  std::vector<GlobalPoint> outline;
+  unsigned int cellIndex = indexFor(detid);
+  const bool silicon8 =
+      (m_det != DetId::HGCalHSc) && m_topology.waferHexagon8() && m_topology.dddConstants().waferHexagon8File();
+  if (silicon8 && (cellIndex < m_cellVec.size())) {
+    HGCalTopology::DecodedDetId id = m_topology.decode(detid);
+    const auto& ddd = m_topology.dddConstants();
+    float zz = ddd.waferZ(id.iLay, true);
+    float dz = -id.zSide * m_cellVec[cellIndex].param()[FlatHexagon::k_dZ];
+    // the same transformation as for the corners in getNewCorners
+    for (const auto& xy : ddd.cellOutline(id.iLay, id.iSec1, id.iSec2, id.iCell1, id.iCell2)) {
+      auto xyglob = ddd.localToGlobal8(id.zSide, id.iLay, id.iSec1, id.iSec2, xy.first, xy.second, true, false);
+      outline.emplace_back(id.zSide * xyglob.first, xyglob.second, id.zSide * (zz + dz));
+    }
+  }
+  const unsigned int maxSize = (m_det == DetId::HGCalHSc) ? m_cellVec2.size() : m_cellVec.size();
+  if ((!silicon8) && (cellIndex < maxSize)) {
+    // tiles and older silicon geometries: the front face of getNewCorners (without the thickness entry)
+    CornersVec corners = getNewCorners(detid);
+    outline.assign(corners.begin(), corners.end() - 1);
+  }
+  double area(0);
+  for (unsigned int i = 0; i < outline.size(); ++i) {
+    const GlobalPoint &p = outline[i], &q = outline[(i + 1) % outline.size()];
+    area += (p.x() * q.y() - q.x() * p.y());
+  }
+  if (area < 0)
+    std::reverse(outline.begin(), outline.end());
+  return outline;
+}
+
 DetId HGCalGeometry::neighborZ(const DetId& idin, const GlobalVector& momentum) const {
   DetId idnew;
   HGCalTopology::DecodedDetId id = m_topology.decode(idin);

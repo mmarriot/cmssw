@@ -14,9 +14,12 @@
 #include "Geometry/HGCalCommonData/interface/HGCalWaferType.h"
 
 #include <algorithm>
+#include <array>
 #include <bitset>
+#include <cmath>
 #include <iterator>
 #include <functional>
+#include <map>
 #include <numeric>
 
 //#define EDM_ML_DEBUG
@@ -419,6 +422,208 @@ bool HGCalDDDConstants::cellInLayer(int waferU, int waferV, int cellU, int cellV
   } else {
     return false;
   }
+}
+
+std::vector<std::pair<double, double>> HGCalDDDConstants::cellOutline(
+    int lay, int waferU, int waferV, int cellU, int cellV) const {
+  using Point = std::pair<double, double>;
+  using Polygon = std::vector<Point>;
+  if (!waferHexagon8File())
+    return Polygon();
+  auto area = [](const Polygon& p) {
+    double a(0);
+    for (unsigned int i = 0; i < p.size(); ++i)
+      a += (p[i].first * p[(i + 1) % p.size()].second - p[(i + 1) % p.size()].first * p[i].second);
+    return 0.5 * a;
+  };
+  auto cross = [](const Point& o, const Point& a, const Point& b) {
+    return ((a.first - o.first) * (b.second - o.second) - (a.second - o.second) * (b.first - o.first));
+  };
+  // Sutherland-Hodgman: a convex polygon clipped by a convex counter-clockwise one
+  auto clip = [&cross](const Polygon& subject, const Polygon& convex) {
+    Polygon out(subject);
+    for (unsigned int i = 0; (i < convex.size()) && (!out.empty()); ++i) {
+      const Point &a = convex[i], &b = convex[(i + 1) % convex.size()];
+      Polygon in;
+      in.swap(out);
+      for (unsigned int j = 0; j < in.size(); ++j) {
+        const Point &p = in[j], &q = in[(j + 1) % in.size()];
+        double cp = cross(a, b, p), cq = cross(a, b, q);
+        if (cp >= 0)
+          out.emplace_back(p);
+        if ((cp >= 0) != (cq >= 0)) {
+          double t = cp / (cp - cq);
+          out.emplace_back(p.first + t * (q.first - p.first), p.second + t * (q.second - p.second));
+        }
+      }
+    }
+    return out;
+  };
+
+  // wafer type, placement index and partial type as used by locateCell and waferFromPosition
+  int indx = HGCalWaferIndex::waferIndex(lay, waferU, waferV);
+  auto itr = hgpar_->typesInLayers_.find(indx);
+  int type = ((itr == hgpar_->typesInLayers_.end()) ? 2 : hgpar_->waferTypeL_[itr->second]);
+  int fineCoarse = ((type == HGCSiliconDetId::HGCalHD120) || (type == HGCSiliconDetId::HGCalHD200)) ? 0 : 1;
+  int ncell = (fineCoarse == 0) ? hgpar_->nCellsFine_ : hgpar_->nCellsCoarse_;
+  int place(HGCalCell::cellPlacementOld), part(HGCalTypes::WaferFull);
+  if (cassetteMode()) {
+    auto ktr = hgpar_->waferInfoMap_.find(indx);
+    if (ktr != hgpar_->waferInfoMap_.end()) {
+      place = HGCalCell::cellPlacementIndex(1, HGCalTypes::layerFrontBack(layerType(lay)), (ktr->second).orient);
+      part = (ktr->second).part;
+    }
+  }
+
+  // cells sit on a lattice of regular hexagons with a corner along x
+  static constexpr double cos60k[6] = {1.0, 0.5, -0.5, -1.0, -0.5, 0.5};
+  static constexpr double sin60k[6] = {
+      0.0, 0.8660254037844386, 0.8660254037844386, 0.0, -0.8660254037844386, -0.8660254037844386};
+  const Point c0 = hgcell_->cellUV2XY2(cellU, cellV, place, fineCoarse);
+  const Point c1 = hgcell_->cellUV2XY2(cellU + 1, cellV + 1, place, fineCoarse);
+  const double side = std::hypot(c1.first - c0.first, c1.second - c0.second) / sqrt3_;
+  auto hexagon = [side](const Point& c) {
+    Polygon h;
+    for (int k = 0; k < 6; ++k)
+      h.emplace_back(c.first + side * cos60k[k], c.second + side * sin60k[k]);
+    return h;
+  };
+  if ((part == HGCalTypes::WaferFull) &&
+      (HGCalCell::cellType(cellU, cellV, ncell, place).second == HGCalCell::fullCell))
+    return hexagon(c0);
+
+  // Otherwise: the cell is made of triangles of the lattice. Each lattice hexagon around the cell is
+  // split into its six triangles, which are clipped to the sensor (the wafer outline without the
+  // mouse bites at its corners); a triangle belongs to the cell that HGCalCellUV assigns it to on
+  // the design lattice (extend = false). That assignment is constant on each triangle, and it
+  // shares out the parts of the lattice hexagons outside the cells of the wafer among the edge
+  // cells. Where it leaves a triangle to a lattice point that is not a cell of the wafer (along
+  // some cuts of partial wafers), the triangle goes to the cell across its outer edge or else to
+  // the cell of a neighbouring triangle of the same hexagon.
+  auto wxy = HGCalWaferMask::waferXY(part, place, waferSize(true), 0.0, 0.0, 0.0, v17OrLess());
+  Polygon sensor(wxy.begin(), wxy.end() - 1);  // waferXY repeats the first corner
+  if (area(sensor) < 0)
+    std::reverse(sensor.begin(), sensor.end());
+  {
+    // mouse bites: cut each corner of the full wafer at mouseBite from the corner
+    auto fxy = HGCalWaferMask::waferXY(HGCalTypes::WaferFull, place, waferSize(true), 0.0, 0.0, 0.0, v17OrLess());
+    const double h = waferSize(true) / sqrt3_ - mouseBite(true);
+    Polygon bites;
+    for (unsigned int k = 0; k + 1 < fxy.size(); ++k) {
+      const auto &a = fxy[k], &b = fxy[(k + 1) % (fxy.size() - 1)];
+      double ra = std::hypot(a.first, a.second), rb = std::hypot(b.first, b.second);
+      // the cut lines of two neighbouring corners meet on the bisector of the corners at h / cos(30)
+      double mx = a.first / ra + b.first / rb, my = a.second / ra + b.second / rb, mr = std::hypot(mx, my);
+      bites.emplace_back(mx / mr * 2 * h / sqrt3_, my / mr * 2 * h / sqrt3_);
+    }
+    if (area(bites) < 0)
+      std::reverse(bites.begin(), bites.end());
+    sensor = clip(sensor, bites);
+  }
+  auto cellAt = [&](double x, double y) {
+    if (cassetteMode() && (part != HGCalTypes::WaferFull))
+      return (waferHexagon8Calib() ? hgcellUV_->cellUVFromXY2(x, y, place, fineCoarse, part, false, false)
+                                   : hgcellUV_->cellUVFromXY1(x, y, place, fineCoarse, part, false, false));
+    return hgcellUV_->cellUVFromXY3(x, y, place, fineCoarse, false, false);
+  };
+  // a cell of this wafer: in the range of a full wafer and, for a partial wafer, kept by its mask
+  auto valid = [&](int u, int v) {
+    return ((u >= 0) && (u < 2 * ncell) && (v >= 0) && (v < 2 * ncell) && ((v - u) < ncell) && ((u - v) <= ncell) &&
+            ((part == HGCalTypes::WaferFull) || HGCalWaferMask::goodCell(u, v, part)));
+  };
+  const double tiny = 1.e-6 * side * side;
+  using Key = std::pair<long long, long long>;
+  auto key = [](const Point& p) { return Key(std::llround(p.first * 1.e6), std::llround(p.second * 1.e6)); };
+  std::map<std::pair<Key, Key>, std::pair<Point, Point>> edges;
+  static constexpr int du[7] = {0, 1, -1, 0, 0, 1, -1};
+  static constexpr int dv[7] = {0, 0, 0, 1, -1, 1, -1};
+  for (int n = 0; n < 7; ++n) {
+    const Point c = hgcell_->cellUV2XY2(cellU + du[n], cellV + dv[n], place, fineCoarse);
+    const Polygon h = hexagon(c);
+    // the cell of each of the six triangles of this lattice hexagon
+    std::array<std::pair<int, int>, 6> owner;
+    std::array<bool, 6> found;
+    for (int k = 0; k < 6; ++k) {
+      owner[k] = cellAt((c.first + h[k].first + h[(k + 1) % 6].first) / 3,
+                        (c.second + h[k].second + h[(k + 1) % 6].second) / 3);
+      found[k] = valid(owner[k].first, owner[k].second);
+      if (!found[k]) {
+        // the cell across the outer edge h[k]-h[k+1]: its lattice point mirrors c in the edge
+        const Point m(h[k].first + h[(k + 1) % 6].first - c.first, h[k].second + h[(k + 1) % 6].second - c.second);
+        for (int j = 1; j < 7; ++j) {
+          int u(cellU + du[n] + du[j]), v(cellV + dv[n] + dv[j]);
+          const Point q = hgcell_->cellUV2XY2(u, v, place, fineCoarse);
+          if ((std::hypot(q.first - m.first, q.second - m.second) < 1.e-3 * side) && valid(u, v)) {
+            owner[k] = {u, v};
+            found[k] = true;
+          }
+        }
+      }
+    }
+    // a triangle still without a cell joins a neighbouring triangle of the hexagon
+    for (int pass = 0; pass < 6; ++pass) {
+      for (int k = 0; k < 6; ++k) {
+        if (!found[k]) {
+          for (int j : {(k + 5) % 6, (k + 1) % 6}) {
+            if (found[j]) {
+              owner[k] = owner[j];
+              found[k] = true;
+              break;
+            }
+          }
+        }
+      }
+    }
+    for (int k = 0; k < 6; ++k) {
+      if (owner[k] != std::make_pair(cellU, cellV))
+        continue;
+      Polygon piece = clip(Polygon{c, h[k], h[(k + 1) % 6]}, sensor);
+      if (area(piece) < tiny)
+        continue;
+      for (unsigned int j = 0; j < piece.size(); ++j) {
+        const Point &a = piece[j], &b = piece[(j + 1) % piece.size()];
+        Key ka = key(a), kb = key(b);
+        if (ka == kb)
+          continue;
+        auto rev = edges.find({kb, ka});
+        if (rev != edges.end())
+          edges.erase(rev);
+        else
+          edges[{ka, kb}] = {a, b};
+      }
+    }
+  }
+  // chain the remaining edges into the outline, dropping corners on a straight line
+  std::map<Key, std::pair<Point, Key>> next;
+  for (const auto& e : edges)
+    next[e.first.first] = {e.second.first, e.first.second};
+  Polygon loop;
+  if (!next.empty()) {
+    Key start = next.begin()->first, k = start;
+    do {
+      auto itn = next.find(k);
+      if (itn == next.end())
+        break;
+      loop.emplace_back(itn->second.first);
+      k = itn->second.second;
+    } while ((k != start) && (loop.size() <= next.size()));
+    if ((k != start) || (loop.size() != next.size())) {
+      // not a single polygon (around the special cells of some partial wafers): the caller falls back
+#ifdef EDM_ML_DEBUG
+      edm::LogVerbatim("HGCalGeom") << "cellOutline: no single outline for layer " << lay << " wafer " << waferU << ":"
+                                    << waferV << " cell " << cellU << ":" << cellV << " (" << next.size()
+                                    << " edges, chained " << loop.size() << ")";
+#endif
+      return Polygon();
+    }
+  }
+  Polygon outline;
+  for (unsigned int i = 0; i < loop.size(); ++i) {
+    const Point &p = loop[(i + loop.size() - 1) % loop.size()], &q = loop[(i + 1) % loop.size()];
+    if (std::abs(cross(p, loop[i], q)) > 1.e-6 * side * side)
+      outline.emplace_back(loop[i]);
+  }
+  return outline;
 }
 
 std::vector<double> HGCalDDDConstants::cellThickness() const {
