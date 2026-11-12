@@ -67,6 +67,8 @@ _truthOfflineInputsKeep = [
     'keep recoCaloClusters_hgcalMergeLayerClusters__*',
     'keep recoPFClusters_particleFlowClusterECAL__*',
     'keep recoPFClusters_particleFlowClusterHCAL__*',
+    'keep recoPFClusters_particleFlowClusterHF__*',
+    'keep recoPFClusters_particleFlowClusterHO__*',
     'keep recoTracks_generalTracks__*',
     'keep recoVertexs_offlinePrimaryVertices__*',
     'keep recoVertexs_inclusiveSecondaryVertices__*',

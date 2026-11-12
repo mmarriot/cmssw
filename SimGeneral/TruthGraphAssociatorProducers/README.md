@@ -15,7 +15,7 @@ One associator per domain consumes those targets and a reco collection:
 |---|---|
 | `AllTrackToTruthBranchAssociatorsProducer` | `allTrackToTruthBranchAssociators` |
 | `TruthBranchTracksterAssociatorsProducer` | `truthBranchTracksterAssociators` |
-| `TruthBranchPFClusterAssociatorsProducer` | `truthBranchPFClusterEcalAssociators`, `truthBranchPFClusterHcalAssociators` |
+| `TruthBranchPFClusterAssociatorsProducer` | `truthBranchPFClusterEcalAssociators`, `truthBranchPFClusterHcalAssociators`, `truthBranchPFClusterHFAssociators`, `truthBranchPFClusterHOAssociators` |
 | `AllVertexToTruthBranchAssociatorsProducer` | `allVertexToTruthBranchAssociators`, `allSecondaryVertexToTruthBranchAssociators` |
 
 Each emits one reco-driven `ticl::TICLAssociationMap` per working point,

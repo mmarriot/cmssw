@@ -149,6 +149,29 @@ truthBranchPFClusterHcalAssociators = truthBranchPFClusterEcalAssociators.clone(
     recoCollections=_tags("pfClustersHcal"),
     denominatorDetectors=cms.vstring(*truthBranchDenominatorDetectors["pfClustersHcal"]),
 )
+# HF and HO are DetId::Hcal like the barrel, so the rechits set the subdetector: a cell
+# with no rechit in the table carries no energy. Each module lists only its own rechits,
+# so its shared energy, sharedEnergyFraction denominator and reverse score all count that
+# subdetector alone. The ECAL and HCAL modules weight with the ECAL and HBHE rechits
+# together.
+#
+# HF reaches |eta| 5.2, past the |eta| < 4 of the shared candidate roots, so it has its
+# own targets with the same selection over the HF acceptance.
+truthBranchTargetsHF = truthBranchTargets.clone(
+    branchSelector=dict(etaMin=-5.2, etaMax=5.2),
+)
+truthBranchPFClusterHFAssociators = truthBranchPFClusterEcalAssociators.clone(
+    recoCollections=_tags("pfClustersHF"),
+    targetsSrc=cms.InputTag("truthBranchTargetsHF", "selectedRoots"),
+    assignableTargetsSrc=cms.InputTag("truthBranchTargetsHF", "assignableRoots"),
+    denominatorDetectors=cms.vstring(*truthBranchDenominatorDetectors["pfClustersHF"]),
+    pfRecHits=cms.VInputTag("particleFlowRecHitHF"),
+)
+truthBranchPFClusterHOAssociators = truthBranchPFClusterEcalAssociators.clone(
+    recoCollections=_tags("pfClustersHO"),
+    denominatorDetectors=cms.vstring(*truthBranchDenominatorDetectors["pfClustersHO"]),
+    pfRecHits=cms.VInputTag("particleFlowRecHitHO"),
+)
 
 # The HLT menu's own reconstruction of the same event. Same producers, same working
 # points, different input collections, so the two can be compared page by page.
@@ -189,6 +212,9 @@ truthGraphAssociatorsSequence = cms.Sequence(
     + truthBranchTracksterAssociators
     + truthBranchPFClusterEcalAssociators
     + truthBranchPFClusterHcalAssociators
+    + truthBranchTargetsHF
+    + truthBranchPFClusterHFAssociators
+    + truthBranchPFClusterHOAssociators
     + allVertexToTruthBranchAssociators
     + allSecondaryVertexToTruthBranchAssociators
 )

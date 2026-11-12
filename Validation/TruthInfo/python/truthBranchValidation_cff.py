@@ -277,6 +277,36 @@ _domains = [
                            "nhits": (50, 0.0, 100.0)},
         thresholds=_caloThresholds,
     ),
+    # HF sits at |z| near 12 m and reaches |eta| 5.2, past the shared eta axis, so its
+    # denominators come from the HF targets and both eta axes run to 5.2. Of the bands, it
+    # fills only the forward one, 3.0 to 4.5. HF and HO clusters have a few cells: at most
+    # 7 and 5 on 50 no-PU ttbar events.
+    dict(
+        name="pfClustersHF",
+        module="TruthBranchPFClusterValidator",
+        label="truthBranchPFClusterHFValidator",
+        associator="truthBranchPFClusterHFAssociators",
+        targetsProducer="truthBranchTargetsHF",
+        dirName="TruthInfo/Offline/PFClustersHF/",
+        recoVariables=["pt", "eta", "phi", "nhits", "vertpos", "zpos"],
+        axisOverrides={"eta": (52, -5.2, 5.2), "caloeta": (52, -5.2, 5.2)},
+        recoAxisOverrides={"zpos": (56, -1400.0, 1400.0), "vertpos": (50, 0.0, 200.0), "nhits": (20, 0.0, 20.0)},
+        etaRegions=["eta30to45"],
+        thresholds=_caloThresholds,
+    ),
+    # HO sits outside the solenoid, at a radius near 4 m, and covers only the barrel band.
+    dict(
+        name="pfClustersHO",
+        module="TruthBranchPFClusterValidator",
+        label="truthBranchPFClusterHOValidator",
+        associator="truthBranchPFClusterHOAssociators",
+        dirName="TruthInfo/Offline/PFClustersHO/",
+        recoVariables=["pt", "eta", "phi", "nhits", "vertpos", "zpos"],
+        recoAxisOverrides={"zpos": (60, -800.0, 800.0), "vertpos": (50, 0.0, 500.0),
+                           "nhits": (20, 0.0, 20.0)},
+        etaRegions=["etaLt15"],
+        thresholds=_caloThresholds,
+    ),
 ]
 
 # The HLT menu's reconstruction of the same event, same domains and same variables. A
@@ -444,7 +474,8 @@ for _d in _domains:
     # bookGunSignal is set for a particle gun.
     _truthArgs = (dict(vertexResolution=cms.string(_d["vertexResolution"]))
                   if "vertexResolution" in _d
-                  else dict(truthLevels=cms.vstring(*_levels),
+                  else dict(targetsProducer=cms.string(_d.get("targetsProducer", "truthBranchTargets")),
+                            truthLevels=cms.vstring(*_levels),
                             signalSeedPdgIds=cms.vint32(*_signalSeedPdgIds),
                             signalSeedHadronFlavors=cms.vint32(*_signalSeedHadronFlavors),
                             bookGunSignal=cms.bool(False),

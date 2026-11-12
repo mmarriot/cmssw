@@ -44,6 +44,13 @@ truthGraphRecoLabelsPSet = cms.PSet(
     # truth hit index carries no preshower sim hits, so they would match nothing.
     pfClustersEcal=cms.vstring("particleFlowClusterECAL"),
     pfClustersHcal=cms.vstring("particleFlowClusterHCAL"),
+    # HF and HO share DetId::Hcal with the barrel, so the detector mask alone cannot
+    # separate them. Their associators weight the cells with their own PF rechits only,
+    # and a cell without a rechit carries no energy, so each shared-energy fraction is
+    # normalised to the branch energy in that subdetector. requireHits of the validator
+    # reads the mask, so it keeps any branch with a hit in HB, HO or HF.
+    pfClustersHF=cms.vstring("particleFlowClusterHF"),
+    pfClustersHO=cms.vstring("particleFlowClusterHO"),
     # Fallback for a job that never sees the producers: the TICL label registry. A job
     # that does run them replaces this with what its process actually schedules, via
     # setTracksterLabelsFromProcess below.
@@ -58,6 +65,8 @@ truthBranchDenominatorDetectors = dict(
     tracksters=["HGCalEE", "HGCalHSi", "HGCalHSc"],
     pfClustersEcal=["Ecal"],
     pfClustersHcal=["Hcal"],
+    pfClustersHF=["Hcal"],
+    pfClustersHO=["Hcal"],
 )
 
 # The same domains reconstructed by the HLT menu. Kept as a separate PSet rather than
@@ -71,6 +80,8 @@ truthGraphHltRecoLabelsPSet = cms.PSet(
     secondaryVertices=cms.vstring(),
     pfClustersEcal=cms.vstring(),
     pfClustersHcal=cms.vstring(),
+    pfClustersHF=cms.vstring(),
+    pfClustersHO=cms.vstring(),
     # Same fallback role as the offline entry, from the menu's own registry in
     # Validation/HGCalValidation. A RECO or DQM job reads the HLT tracksters from its
     # input file and so has no HLT producer to discover.
