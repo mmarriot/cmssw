@@ -65,6 +65,14 @@ public:
   std::pair<double, double> cellEtaPhiTrap(int type, int irad) const;
   bool cellInLayer(int waferU, int waferV, int cellU, int cellV, int lay, int zside, bool reco) const;
   const HGCalCellOffset* cellOffset() const { return cellOffset_.get(); }
+  // Outline of a silicon cell (reco units, counter-clockwise) in the wafer frame of
+  // locateCell(..., all = false, norot = true, ...), for geometries with wafers from file: the
+  // lattice triangles HGCalCellUV gives the cell (extend = false), clipped to the wafer outline of
+  // HGCalWaferMask::waferXY less a mouse bite of mouseBite() at each corner of the full wafer (the
+  // model of HGCalCellOffset), so truncated, extended, corner and partial-wafer cells get their
+  // shape. Neither guard ring nor sensor size offset is subtracted. Empty if the triangles of the
+  // cell do not form one polygon (around special cells of some partial wafers)
+  std::vector<std::pair<double, double>> cellOutline(int lay, int waferU, int waferV, int cellU, int cellV) const;
   double cellSizeHex(int type) const;
   inline std::pair<double, double> cellSizeTrap(int type, int irad) const {
     return std::make_pair(hgpar_->radiusLayer_[type][irad - 1], hgpar_->radiusLayer_[type][irad]);
