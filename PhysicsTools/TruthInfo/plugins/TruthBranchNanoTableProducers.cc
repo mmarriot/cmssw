@@ -8,7 +8,8 @@
 // map of SimGeneral/TruthGraphAssociatorProducers in the count/offset + flat link layout
 // of the TICL association tables, with the branch key remapped from the graph particle id
 // to the row of that particle table (it reads the published ids), so a consumer indexes
-// the two tables directly.
+// the two tables directly. TruthBranchVertexAssociationFlatTableProducer does the same for
+// the vertex maps, whose truth key is a graph vertex and whose payload a fraction.
 //
 // Both read the map and the graph in compiled code: the association-map template cannot
 // be instantiated from FWLite or cppyy.
@@ -17,6 +18,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include "DataFormats/DetId/interface/DetId.h"
@@ -291,17 +293,28 @@ void TruthParticleFlatTableProducer::fillDescriptions(edm::ConfigurationDescript
   descriptions.add("truthParticleFlatTable", desc);
 }
 
-class TruthBranchAssociationFlatTableProducer : public edm::global::EDProducer<> {
+// Map is the payload of the association map: the shared-energy maps of the hit-based
+// domains (tracks, tracksters, clusters), keyed by graph particle, or the fraction maps of
+// the vertex domains, keyed by graph vertex. What a payload means depends on the domain (a
+// shared hit count for tracks, a share of the track pT^2 for vertices), so the names and
+// docs of the payload columns are parameters; left empty, they take the defaults below.
+template <typename Map>
+class TruthBranchAssociationFlatTableProducerT : public edm::global::EDProducer<> {
 public:
-  using MapType = ticl::TICLAssociationMap<ticl::mapWithSharedEnergyAndScore>;
+  using MapType = ticl::TICLAssociationMap<Map>;
+  static constexpr bool kVertexMap = std::is_same_v<Map, ticl::mapWithFractionAndScore>;
 
-  explicit TruthBranchAssociationFlatTableProducer(edm::ParameterSet const& cfg)
+  explicit TruthBranchAssociationFlatTableProducerT(edm::ParameterSet const& cfg)
       : mapToken_(consumes<MapType>(cfg.getParameter<edm::InputTag>("src"))),
         targetsToken_(consumes<std::vector<unsigned int>>(cfg.getParameter<edm::InputTag>("targets"))),
         name_(cfg.getParameter<std::string>("name")),
         linkName_(name_ + "Links"),
         doc_(cfg.getParameter<std::string>("doc")),
         recoToTruth_(cfg.getParameter<std::string>("direction") == "recoToTruth"),
+        truthObject_(cfg.getParameter<std::string>("truthObject")),
+        payloadName_(payloadColumn(cfg, recoToTruth_, 0)),
+        payloadDoc_(payloadColumn(cfg, recoToTruth_, 1)),
+        scoreDoc_(payloadColumn(cfg, recoToTruth_, 2)),
         skipNonExistingSrc_(cfg.getParameter<bool>("skipNonExistingSrc")),
         precision_(cfg.getParameter<int>("precision")) {
     const auto direction = cfg.getParameter<std::string>("direction");
@@ -310,7 +323,7 @@ public:
           << "direction must be 'recoToTruth' or 'truthToReco', got '" << direction << "'";
     }
     // The main table, rows parallel to the reco collection (recoToTruth) or to the truth
-    // particle table (truthToReco), and the flat link table, as the TICL association
+    // table (truthToReco), and the flat link table, as the TICL association
     // tables lay them out: <name>_n<name>Links / <name>_o<name>Links index <name>Links.
     produces<nanoaod::FlatTable>();
     produces<nanoaod::FlatTable>(linkName_ + "Table");
@@ -320,23 +333,61 @@ public:
   static void fillDescriptions(edm::ConfigurationDescriptions& descriptions);
 
 private:
+  static float payload(auto const& element) {
+    if constexpr (kVertexMap)
+      return element.fraction();
+    else
+      return element.sharedEnergy();
+  }
+
+  // Name, doc and score doc of the payload columns: the configured ones, or the defaults of
+  // the map type and direction. The defaults live here, not in fillDescriptions, because a
+  // cfi default cannot hold an apostrophe.
+  static std::string payloadColumn(edm::ParameterSet const& cfg, bool recoToTruth, int field) {
+    static constexpr char const* kDefaults[2][2][3] = {
+        {{"sharedEnergy",
+          "Energy the reco object shares with the truth branch [GeV]",
+          "1 - reco purity: the reco energy the branch fails to cover (lower is better)"},
+         {"sharedEnergyFraction",
+          "Shared energy over the branch's own energy in the denominator detectors",
+          "1 - truth purity: the branch energy the reco object fails to cover (lower is better)"}},
+        {{"fraction",
+          "Share of the reco vertex's track pT^2 carried by tracks matched to the truth vertex",
+          "1 - fraction (lower is better)"},
+         {"fraction",
+          "Shared track pT^2 over the pT^2 of the charged particles the truth vertex produced, at most 1",
+          "1 - fraction (lower is better)"}}};
+    static constexpr char const* kFields[3] = {"name", "doc", "scoreDoc"};
+    const auto value = cfg.getParameter<edm::ParameterSet>(recoToTruth ? "recoToTruthPayload" : "truthToRecoPayload")
+                           .getParameter<std::string>(kFields[field]);
+    return value.empty() ? kDefaults[kVertexMap][recoToTruth ? 0 : 1][field] : value;
+  }
+
   const edm::EDGetTokenT<MapType> mapToken_;
   const edm::EDGetTokenT<std::vector<unsigned int>> targetsToken_;
   const std::string name_;
   const std::string linkName_;
   const std::string doc_;
   const bool recoToTruth_;
+  const std::string truthObject_;
+  const std::string payloadName_;
+  const std::string payloadDoc_;
+  const std::string scoreDoc_;
   const bool skipNonExistingSrc_;
   const int precision_;
 };
 
-void TruthBranchAssociationFlatTableProducer::produce(edm::StreamID, edm::Event& event, edm::EventSetup const&) const {
+template <typename Map>
+void TruthBranchAssociationFlatTableProducerT<Map>::produce(edm::StreamID,
+                                                            edm::Event& event,
+                                                            edm::EventSetup const&) const {
   auto const mapHandle = event.getHandle(mapToken_);
   auto const targetsHandle = event.getHandle(targetsToken_);
   const bool present = mapHandle.isValid() && targetsHandle.isValid();
   if (!present && !skipNonExistingSrc_) {
-    throw cms::Exception("ProductNotFound") << "TruthBranchAssociationFlatTableProducer '" << name_
-                                            << "': the association map or the target list is missing";
+    throw cms::Exception("ProductNotFound") << (kVertexMap ? "TruthBranchVertexAssociationFlatTableProducer '"
+                                                           : "TruthBranchAssociationFlatTableProducer '")
+                                            << name_ << "': the association map or the target list is missing";
   }
 
   std::vector<int32_t> counts, offsets;
@@ -346,7 +397,7 @@ void TruthBranchAssociationFlatTableProducer::produce(edm::StreamID, edm::Event&
   if (present) {
     auto const& map = *mapHandle;
     const std::vector<unsigned int> targets = sortedTargets(*targetsHandle);
-    // The row of a graph particle in the particle table, or -1 when it is not a target.
+    // The row of a graph id in the truth table, or -1 when it is not a target.
     auto rowOf = [&targets](unsigned int particleId) -> int64_t {
       const auto it = std::lower_bound(targets.begin(), targets.end(), particleId);
       if (it == targets.end() || *it != particleId) {
@@ -369,15 +420,16 @@ void TruthBranchAssociationFlatTableProducer::produce(edm::StreamID, edm::Event&
           }
           index.push_back(static_cast<uint32_t>(row));
           graphId.push_back(element.index());
-          value.push_back(element.sharedEnergy());
+          value.push_back(payload(element));
           score.push_back(element.score());
           ++count;
         }
         counts.push_back(count);
       }
     } else {
-      // One row per target, in the order of the particle table; each link points at a reco
-      // object. The map has a row per graph particle, so a target beyond it is an empty row.
+      // One row per target, in the order of the truth table; each link points at a reco
+      // object. The map has a row per graph particle (per graph vertex for the vertex maps),
+      // so a target beyond it is an empty row.
       counts.reserve(targets.size());
       for (const unsigned int particleId : targets) {
         int32_t count = 0;
@@ -385,7 +437,7 @@ void TruthBranchAssociationFlatTableProducer::produce(edm::StreamID, edm::Event&
           for (auto const& element : map[particleId]) {
             index.push_back(element.index());
             graphId.push_back(particleId);
-            value.push_back(element.sharedEnergy());
+            value.push_back(payload(element));
             score.push_back(element.score());
             ++count;
           }
@@ -410,45 +462,67 @@ void TruthBranchAssociationFlatTableProducer::produce(edm::StreamID, edm::Event&
   auto links = std::make_unique<nanoaod::FlatTable>(index.size(), linkName_, false, false);
   links->setDoc("Links of " + name_);
   if (recoToTruth_) {
-    links->addColumn<uint32_t>("index", index, "Row in the truth particle table");
-    links->addColumn<uint32_t>("graphId", graphId, "Truth graph particle id of the linked row");
-    links->addColumn<float>(
-        "sharedEnergy", value, "Energy the reco object shares with the truth branch [GeV]", precision_);
-    links->addColumn<float>(
-        "score", score, "1 - reco purity: the reco energy the branch fails to cover (lower is better)", precision_);
+    links->addColumn<uint32_t>("index", index, "Row in the truth " + truthObject_ + " table");
+    links->addColumn<uint32_t>("graphId", graphId, "Truth graph " + truthObject_ + " id of the linked row");
   } else {
     links->addColumn<uint32_t>("index", index, "Row in the reco collection");
-    links->addColumn<uint32_t>("graphId", graphId, "Truth graph particle id of this row");
-    links->addColumn<float>("sharedEnergyFraction",
-                            value,
-                            "Shared energy over the branch's own energy in the denominator detectors",
-                            precision_);
-    links->addColumn<float>("score",
-                            score,
-                            "1 - truth purity: the branch energy the reco object fails to cover (lower is better)",
-                            precision_);
+    links->addColumn<uint32_t>("graphId", graphId, "Truth graph " + truthObject_ + " id of this row");
   }
+  links->addColumn<float>(payloadName_, value, payloadDoc_, precision_);
+  links->addColumn<float>("score", score, scoreDoc_, precision_);
   event.put(std::move(links), linkName_ + "Table");
 }
 
-void TruthBranchAssociationFlatTableProducer::fillDescriptions(edm::ConfigurationDescriptions& descriptions) {
+template <typename Map>
+void TruthBranchAssociationFlatTableProducerT<Map>::fillDescriptions(edm::ConfigurationDescriptions& descriptions) {
   edm::ParameterSetDescription desc;
-  desc.add<edm::InputTag>("src",
-                          edm::InputTag("truthBranchTracksterAssociators", "ticlTrackstersCLUE3DHighRecoToTruthFixed"))
-      ->setComment("A ticl::TICLAssociationMap<ticl::mapWithSharedEnergyAndScore> of the branch associators");
-  desc.add<edm::InputTag>("targets", edm::InputTag("ticlTruthCBTable", "selected"))
-      ->setComment(
-          "The particle ids of the truth particle table in row order (the 'selected' product of its "
-          "TruthParticleFlatTableProducer), so a link index is a row of that table");
+  if constexpr (kVertexMap) {
+    desc.add<edm::InputTag>(
+            "src", edm::InputTag("allVertexToTruthBranchAssociators", "offlinePrimaryVerticesRecoToTruthFixed"))
+        ->setComment("A ticl::TICLAssociationMap<ticl::mapWithFractionAndScore> of the vertex associators");
+    desc.add<edm::InputTag>("targets", edm::InputTag("truthGraphTable", "selectedVertices"))
+        ->setComment(
+            "The vertex ids of the truth vertex table in row order (the 'selectedVertices' product of "
+            "TruthGraphFlatTableProducer), so a link index is a row of that table");
+  } else {
+    desc.add<edm::InputTag>(
+            "src", edm::InputTag("truthBranchTracksterAssociators", "ticlTrackstersCLUE3DHighRecoToTruthFixed"))
+        ->setComment("A ticl::TICLAssociationMap<ticl::mapWithSharedEnergyAndScore> of the branch associators");
+    desc.add<edm::InputTag>("targets", edm::InputTag("ticlTruthCBTable", "selected"))
+        ->setComment(
+            "The particle ids of the truth particle table in row order (the 'selected' product of its "
+            "TruthParticleFlatTableProducer), so a link index is a row of that table");
+  }
   desc.add<std::string>("direction", "recoToTruth")
       ->setComment("recoToTruth: rows are reco objects and links point at truth rows; truthToReco: the reverse");
-  desc.add<std::string>("name", "CLUE3DHighToTruthCB");
-  desc.add<std::string>("doc", "ticlTrackstersCLUE3DHigh -> calo-boundary truth association");
+  desc.add<std::string>("name", kVertexMap ? "offlinePrimaryVerticesToTruth" : "CLUE3DHighToTruthCB");
+  desc.add<std::string>("doc",
+                        kVertexMap ? "offlinePrimaryVertices -> truth vertex association"
+                                   : "ticlTrackstersCLUE3DHigh -> calo-boundary truth association");
   desc.add<bool>("skipNonExistingSrc", true)->setComment("Write empty tables when an input is missing");
   desc.add<int>("precision", -1);
-  descriptions.add("truthBranchAssociationFlatTable", desc);
+  desc.add<std::string>("truthObject", kVertexMap ? "vertex" : "particle")
+      ->setComment("What a truth row is, in the docs of the index and graphId columns");
+  for (std::string const direction : {"recoToTruth", "truthToReco"}) {
+    edm::ParameterSetDescription payload;
+    payload.add<std::string>("name", "")->setComment("Name of the payload column (empty: the default)");
+    payload.add<std::string>("doc", "")->setComment("Doc of the payload column (empty: the default)");
+    payload.add<std::string>("scoreDoc", "")->setComment("Doc of the score column (empty: the default)");
+    desc.add<edm::ParameterSetDescription>(direction + "Payload", payload)
+        ->setComment("Payload and score columns when direction is " + direction +
+                     ". Defaults: sharedEnergy (reco -> truth) and sharedEnergyFraction (truth -> reco) for the "
+                     "shared-energy maps, fraction for the vertex maps");
+  }
+  descriptions.add(kVertexMap ? "truthBranchVertexAssociationFlatTable" : "truthBranchAssociationFlatTable", desc);
 }
 
 #include "FWCore/Framework/interface/MakerMacros.h"
 DEFINE_FWK_MODULE(TruthParticleFlatTableProducer);
+// Particle maps: tracks, tracksters, layer clusters, candidates, PF clusters.
+using TruthBranchAssociationFlatTableProducer =
+    TruthBranchAssociationFlatTableProducerT<ticl::mapWithSharedEnergyAndScore>;
 DEFINE_FWK_MODULE(TruthBranchAssociationFlatTableProducer);
+// Vertex maps: primary and secondary vertices.
+using TruthBranchVertexAssociationFlatTableProducer =
+    TruthBranchAssociationFlatTableProducerT<ticl::mapWithFractionAndScore>;
+DEFINE_FWK_MODULE(TruthBranchVertexAssociationFlatTableProducer);
