@@ -52,8 +52,8 @@
   <use name="SimDataFormats/Associations"/>
   <use name="SimDataFormats/TrackingAnalysis"/>
   <use name="SimTracker/Common"/>
-  <use name="DataFormats/RPCRecHit"/>
   <use name="DataFormats/FTLRecHit"/>
+  <use name="DataFormats/RPCRecHit"/>
   <use name="Geometry/MTDGeometryBuilder"/>
   <flags EDM_PLUGIN="1"/>
 </library>
