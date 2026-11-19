@@ -94,24 +94,56 @@ TEST_CASE("PFCandidateLinkTableProducer: optional inputs", "[PFCandidateLinkTabl
 }
 
 TEST_CASE("PFCandidateLinkTableProducer: inputs that do not match", "[PFCandidateLinkTableProducer]") {
-  SECTION("references into another collection than the configured one") {
+  // by default, links that the configuration does not cover are written as -1 (or left out), with a warning;
+  // with strict, they throw
+  auto strict = [](std::string const& parameters) {
     edm::test::TestProcessor tester(
-        edm::test::TestProcessor::Config{configuration("process.toTest.muons = cms.InputTag('input', 'otherMuons')")});
+        edm::test::TestProcessor::Config{configuration(parameters + "process.toTest.strict = cms.bool(True)\n")});
     REQUIRE_THROWS_AS(tester.test(), cms::Exception);
+  };
+  SECTION("references into another collection than the configured one") {
+    const std::string muons = "process.toTest.muons = cms.InputTag('input', 'otherMuons')\n";
+    edm::test::TestProcessor tester(edm::test::TestProcessor::Config{configuration(muons)});
+    auto const event = tester.test();
+    REQUIRE(column(*event.get<nanoaod::FlatTable>(), "muonIdx") == std::vector<int32_t>(6, -1));
+    REQUIRE(column(*event.get<nanoaod::FlatTable>(), "trackIdx") == std::vector<int32_t>{0, -1, 2, -1, -1, 1});
+    strict(muons);
   }
   SECTION("candidates that do not end with the TICL candidates") {
-    edm::test::TestProcessor tester(edm::test::TestProcessor::Config{
-        configuration("process.toTest.ticlCandidates = cms.InputTag('input', 'reversedTicl')")});
-    REQUIRE_THROWS_AS(tester.test(), cms::Exception);
+    const std::string ticl = "process.toTest.ticlCandidates = cms.InputTag('input', 'reversedTicl')\n";
+    edm::test::TestProcessor tester(edm::test::TestProcessor::Config{configuration(ticl)});
+    auto const event = tester.test();
+    REQUIRE(column(*event.get<nanoaod::FlatTable>(), "ticlCandidateIdx") == std::vector<int32_t>(6, -1));
+    strict(ticl);
   }
   SECTION("blocks that are not those of the candidates") {
-    edm::test::TestProcessor tester(edm::test::TestProcessor::Config{
-        configuration("process.toTest.blocks = cms.InputTag('input', 'otherBlocks')")});
-    REQUIRE_THROWS_AS(tester.test(), cms::Exception);
+    const std::string blocks = "process.toTest.blocks = cms.InputTag('input', 'otherBlocks')\n";
+    edm::test::TestProcessor tester(edm::test::TestProcessor::Config{configuration(blocks)});
+    auto const event = tester.test();
+    REQUIRE(event.get<nanoaod::FlatTable>("PFCandECAL")->nRows() == 0);
+    REQUIRE(event.get<nanoaod::FlatTable>("PFCandHCAL")->nRows() == 0);
+    strict(blocks);
   }
   SECTION("a cluster table named as the candidate table") {
     REQUIRE_THROWS_AS(edm::test::TestProcessor(edm::test::TestProcessor::Config{
                           configuration("process.toTest.clusters[0].name = 'PFCand'")}),
                       cms::Exception);
+  }
+}
+
+TEST_CASE("PFCandidateLinkTableProducer: missing candidates", "[PFCandidateLinkTableProducer]") {
+  const std::string missing = "process.toTest.src = cms.InputTag('input', 'missing')\n";
+  SECTION("fail by default") {
+    edm::test::TestProcessor tester(edm::test::TestProcessor::Config{configuration(missing)});
+    REQUIRE_THROWS_AS(tester.test(), cms::Exception);
+  }
+  SECTION("empty tables with skipNonExistingSrc") {
+    edm::test::TestProcessor tester(edm::test::TestProcessor::Config{
+        configuration(missing + "process.toTest.skipNonExistingSrc = cms.bool(True)")});
+    auto const event = tester.test();
+    REQUIRE(event.get<nanoaod::FlatTable>()->nRows() == 0);
+    REQUIRE(event.get<nanoaod::FlatTable>()->extension());
+    REQUIRE(event.get<nanoaod::FlatTable>("PFCandECAL")->nRows() == 0);
+    REQUIRE(event.get<nanoaod::FlatTable>("PFCandHCAL")->nRows() == 0);
   }
 }
