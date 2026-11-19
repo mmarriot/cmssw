@@ -61,6 +61,14 @@
   <use name="Geometry/CaloGeometry"/>
   <use name="DataFormats/FTLRecHit"/>
   <use name="Geometry/MTDGeometryBuilder"/>
+  <use name="DataFormats/DetId"/>
+  <use name="DataFormats/MuonDetId"/>
+  <use name="DataFormats/TrackerCommon"/>
+  <use name="DataFormats/TrackerRecHit2D"/>
+  <use name="Geometry/CommonTopologies"/>
+  <use name="RecoLocalTracker/ClusterParameterEstimator"/>
+  <use name="RecoTracker/TransientTrackingRecHit"/>
+  <use name="TrackingTools/TransientTrackingRecHit"/>
   <flags EDM_PLUGIN="1"/>
 </library>
 <library file="rntuple/*.cc" name="PhysicsToolsNanoAODRNuplePlugins">
