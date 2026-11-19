@@ -5,9 +5,9 @@
 // - trackIdx: the index of the track in the collection `tracks`, which is its row in a table of that collection that
 //   keeps its order and has no selection (e.g. SimpleTrackFlatTableProducer);
 // - weight: the weight of the track in the vertex fit (Vertex::trackWeight, which is stored in steps of 1/255).
-// A track can belong to more than one vertex (the primary and a secondary vertex, or several primary vertices with
-// small weights), so this is a link table, in the layout of the jet constituent tables, rather than a column of the
-// track table.
+// Each link has its own weight, and one track collection is shared by several vertex collections (primary and
+// secondary vertices), so this is a link table, in the layout of the jet constituent tables, rather than a column of
+// the track table.
 
 #include "CommonTools/Utils/interface/StringCutObjectSelector.h"
 #include "DataFormats/Common/interface/Handle.h"
