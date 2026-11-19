@@ -1,8 +1,10 @@
 // One row per rechit of an ECAL (barrel, endcap, preshower) or HCAL (HBHE, HF, HO) rechit collection, in collection
 // order: the raw DetId, the energy and time, and the global position of the cell from CaloGeometry (the reference
 // point of the cell, CaloCellGeometry::getPosition, as for the positions of PF rechits). The DetId identifies the hit
-// in other tables, such as the hits of calorimeter clusters. An extension table with the same src and no cut adds more
-// columns of the hits, e.g. the expression-based HCAL rechit tables of DPGAnalysis/HcalNanoAOD.
+// in other tables, such as the hits of calorimeter clusters. An extension table with the same src and the same cut adds
+// more columns of the hits, e.g. the expression-based HCAL rechit tables of DPGAnalysis/HcalNanoAOD
+// (HBHERecHitFlatTableProducer etc., without positions). Its configuration names its tables RecHitHBHE, RecHitHF and
+// RecHitHO: in a job with both, run those tables as extensions of these, or give one of the two other names.
 
 #include "CommonTools/Utils/interface/StringCutObjectSelector.h"
 #include "DataFormats/DetId/interface/DetId.h"
