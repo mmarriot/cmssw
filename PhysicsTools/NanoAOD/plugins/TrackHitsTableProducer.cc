@@ -133,6 +133,11 @@ public:
         if (selected.size() >= maxLen_)
           break;
         if (cut_(track)) {
+          // AOD keeps the tracks but not their extras and hits: say so rather than fail on the first dereference
+          if (selected.empty() && !track.recHitsOk())
+            throw cms::Exception("ProductNotFound")
+                << "the hits of the tracks of src are not in the event: this table needs RECO or FEVT (track extras "
+                   "and hits), not AOD";
           selected.push_back(&track);
           nHits += track.recHitsSize();  // an upper bound: the invalid hits are left out
         }
@@ -155,11 +160,7 @@ public:
     detIds.reserve(nHits);
     layers.reserve(nHits);
     for (reco::Track const* track : selected) {
-      // uint16, as the counts of the collection tables of SimpleCollectionFlatTableProducer
-      if (track->recHitsSize() > std::numeric_limits<uint16_t>::max())
-        throw cms::Exception("TrackHitsTableProducer")
-            << "a track of " << track->recHitsSize() << " hits is too large for the n" << hitsName_ << " column";
-      uint16_t count = 0;
+      uint16_t count = 0;  // uint16, as the counts of the collection tables of SimpleCollectionFlatTableProducer
       for (TrackingRecHit const* hit : track->recHits()) {
         if (!hit->isValid())
           continue;
@@ -192,7 +193,9 @@ public:
 
   static void fillDescriptions(edm::ConfigurationDescriptions& descriptions) {
     edm::ParameterSetDescription desc;
-    desc.add<edm::InputTag>("src")->setComment("input track collection, of reco::Track or a derived type");
+    desc.add<edm::InputTag>("src")->setComment(
+        "input track collection, of reco::Track or a derived type, with its track extras and hits (RECO or FEVT, not "
+        "AOD)");
     desc.add<std::string>("cut", "")->setComment("selection of the tracks: must be that of the track table");
     desc.addOptional<unsigned int>("maxLen")->setComment(
         "maximum number of selected tracks: must be that of the track table");
