@@ -13,6 +13,8 @@
   <use name="DataFormats/ParticleFlowReco"/>
   <use name="DataFormats/PatCandidates"/>
   <use name="DataFormats/JetReco"/>
+  <use name="DataFormats/TrackReco"/>
+  <use name="DataFormats/VertexReco"/>
   <use name="FWCore/Utilities"/>
   <use name="catch2"/>
 </bin>
