@@ -56,6 +56,9 @@
   <use name="DataFormats/CaloRecHit"/>
   <use name="DataFormats/EgammaReco"/>
   <use name="DataFormats/ParticleFlowReco"/>
+  <use name="DataFormats/EcalRecHit"/>
+  <use name="DataFormats/HcalRecHit"/>
+  <use name="Geometry/CaloGeometry"/>
   <flags EDM_PLUGIN="1"/>
 </library>
 <library file="rntuple/*.cc" name="PhysicsToolsNanoAODRNuplePlugins">
