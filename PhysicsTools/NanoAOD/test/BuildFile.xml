@@ -24,6 +24,11 @@
   <use name="DataFormats/ParticleFlowCandidate"/>
   <use name="DataFormats/ParticleFlowReco"/>
   <use name="DataFormats/TrackReco"/>
+<library file="ConstituentTestInputProducer.cc" name="PhysicsToolsNanoAODConstituentTestInput">
+  <use name="DataFormats/Candidate"/>
+  <use name="DataFormats/JetReco"/>
+  <use name="DataFormats/ParticleFlowCandidate"/>
+  <use name="DataFormats/TauReco"/>
   <use name="FWCore/Framework"/>
   <use name="FWCore/ParameterSet"/>
   <use name="FWCore/Utilities"/>
