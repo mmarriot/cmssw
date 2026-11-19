@@ -5,13 +5,15 @@
 //   elements the candidate was made from (elementsInBlocks), in candidate order.
 // The rows are those of tables that keep the order of their collections: the candidate table with the same cut and
 // maxLen, and the track, muon and cluster tables without either. A reference into another collection than the
-// configured one throws, rather than giving a row of the wrong table. Reading the block elements needs the PF blocks,
+// configured one is written as -1 (or left out of the pair tables) with a warning, rather than giving a row of the
+// wrong table; with strict, it throws. Reading the block elements needs the PF blocks,
 // which RECO keeps and AOD does not: with no cluster collections configured, the blocks are not read. They are
 // consumed, so the framework reads them before the module runs rather than when the first element is dereferenced.
 // TICL candidates: the Phase-2 reconstruction makes one PF candidate per TICL candidate (pfTICL, in the order of the
 // TICL candidates) and appends them to the others (particleFlowTmp merges particleFlowTmpBarrel and pfTICL, then
 // PFLinker copies the list in order into particleFlow). The PF candidates themselves keep no link to them, so the
-// last candidates of src must be copies of ticlCandidates, in order: this is checked on every event.
+// last candidates of src must be copies of ticlCandidates, in order: this is checked on every event, and if they are
+// not, ticlCandidateIdx is -1 for every candidate, with a warning (strict: it throws).
 
 #include "CommonTools/Utils/interface/StringCutObjectSelector.h"
 #include "DataFormats/GsfTrackReco/interface/GsfTrack.h"
@@ -25,6 +27,7 @@
 #include "FWCore/Framework/interface/Event.h"
 #include "FWCore/Framework/interface/MakerMacros.h"
 #include "FWCore/Framework/interface/global/EDProducer.h"
+#include "FWCore/MessageLogger/interface/MessageLogger.h"
 #include "FWCore/ParameterSet/interface/ConfigurationDescriptions.h"
 #include "FWCore/ParameterSet/interface/ParameterSet.h"
 #include "FWCore/ParameterSet/interface/ParameterSetDescription.h"
@@ -33,6 +36,7 @@
 #include "FWCore/Utilities/interface/Exception.h"
 #include "FWCore/Utilities/interface/InputTag.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -42,14 +46,15 @@
 
 namespace {
   // The row of the object a reference points to, in a table of the collection `product` kept in order; -1 for a
-  // null reference.
+  // null reference and for a reference into another product, which is counted in `foreign`.
   template <typename R>
-  int32_t rowOf(R const& ref, edm::ProductID const& product, char const* what) {
+  int32_t rowOf(R const& ref, edm::ProductID const& product, std::size_t& foreign) {
     if (ref.isNull())
       return -1;
-    if (ref.id() != product)
-      throw cms::Exception("Configuration") << "the reference of a PF candidate for " << what << " points into product "
-                                            << ref.id() << ", not the configured " << product;
+    if (ref.id() != product) {
+      ++foreign;
+      return -1;
+    }
     return static_cast<int32_t>(ref.key());
   }
 }  // namespace
@@ -58,6 +63,8 @@ class PFCandidateLinkTableProducer final : public edm::global::EDProducer<> {
 public:
   explicit PFCandidateLinkTableProducer(edm::ParameterSet const& cfg)
       : name_(cfg.getParameter<std::string>("name")),
+        strict_(cfg.getParameter<bool>("strict")),
+        skipNonExistingSrc_(cfg.getParameter<bool>("skipNonExistingSrc")),
         maxLen_(cfg.existsAs<unsigned int>("maxLen") ? cfg.getParameter<unsigned int>("maxLen")
                                                      : std::numeric_limits<unsigned int>::max()),
         cut_(cfg.getParameter<std::string>("cut")),
@@ -83,7 +90,14 @@ public:
   }
 
   void produce(edm::StreamID, edm::Event& event, edm::EventSetup const&) const override {
-    auto const& candidates = event.get(candidatesToken_);
+    auto const handle = event.getHandle(candidatesToken_);
+    if (!handle.isValid() && skipNonExistingSrc_) {  // empty tables, as SimpleFlatTableProducer
+      event.put(tableToken_, std::make_unique<nanoaod::FlatTable>(0, name_, false, true));
+      for (auto const& links : clusters_)
+        putPairs(event, links, {}, {});
+      return;
+    }
+    auto const& candidates = *handle;   // throws for a missing collection
     std::vector<std::size_t> selected;  // the rows of the candidate table, as SimpleFlatTableProducer selects them
     for (std::size_t i = 0; i < candidates.size() && selected.size() < maxLen_; ++i)
       if (cut_(candidates[i]))
@@ -96,8 +110,11 @@ public:
       const auto product = event.getHandle(token).id();
       std::vector<int32_t> rows;
       rows.reserve(selected.size());
+      std::size_t foreign = 0;
       for (std::size_t i : selected)
-        rows.push_back(rowOf((candidates[i].*ref)(), product, column));
+        rows.push_back(rowOf((candidates[i].*ref)(), product, foreign));
+      if (foreign > 0)
+        unconfigured(foreign, column, product);
       table->addColumn<int32_t>(column, rows, doc);
     };
     addRows(tracksToken_, &reco::PFCandidate::trackRef, "trackIdx", "row of the track (trackRef), -1 if none");
@@ -123,6 +140,11 @@ public:
     desc.addOptional<unsigned int>("maxLen")->setComment(
         "maximum number of selected candidates: must be that of the candidate table");
     desc.add<std::string>("name")->setComment("name of the candidate table, extended with the columns of the rows");
+    desc.add<bool>("skipNonExistingSrc", false)->setComment("empty tables for missing candidates instead of failing");
+    desc.add<bool>("strict", false)
+        ->setComment(
+            "throw for references into other collections than the configured ones and for candidates that do not end "
+            "with ticlCandidates, instead of writing -1 (leaving the pair out) with a warning");
     desc.add<edm::InputTag>("tracks", edm::InputTag("generalTracks"))
         ->setComment("the tracks of trackRef, for a trackIdx column (empty: no column)");
     desc.add<edm::InputTag>("gsfTracks", edm::InputTag("electronGsfTracks"))
@@ -153,6 +175,18 @@ private:
     return tag.label().empty() ? edm::EDGetTokenT<T>() : consumes<T>(tag);
   }
 
+  // References of the candidates for `what` that point into other products than the configured `product`: an error
+  // with strict, else a warning (the caller writes them as -1 or leaves them out). At most one message per event and
+  // column.
+  void unconfigured(std::size_t count, char const* what, edm::ProductID const& product) const {
+    if (strict_)
+      throw cms::Exception("Configuration") << count << " references of PF candidates for " << what
+                                            << " point into other products than the configured " << product;
+    edm::LogWarning("PFCandidateLinkTableProducer")
+        << count << " references of PF candidates for " << what << " point into other products than the configured "
+        << product << ": written as -1 (left out of the pair tables)";
+  }
+
   struct ClusterLinks {
     edm::EDGetTokenT<reco::PFClusterCollection> clustersToken;
     edm::EDPutTokenT<nanoaod::FlatTable> tableToken;
@@ -162,16 +196,21 @@ private:
   std::vector<int32_t> ticlRows(reco::PFCandidateCollection const& candidates,
                                 reco::PFCandidateCollection const& ticl,
                                 std::vector<std::size_t> const& selected) const {
-    if (ticl.size() > candidates.size())
-      throw cms::Exception("Configuration")
-          << ticl.size() << " TICL PF candidates but only " << candidates.size() << " PF candidates";
-    const std::size_t first = candidates.size() - ticl.size();
-    for (std::size_t i = first; i < candidates.size(); ++i) {
-      auto const &candidate = candidates[i], &copy = ticl[i - first];
-      if (candidate.pdgId() != copy.pdgId() || candidate.charge() != copy.charge() || candidate.p4() != copy.p4())
-        throw cms::Exception("Configuration") << "PF candidate " << i << " is not TICL PF candidate " << i - first
-                                              << ": the PF candidates do not end with the TICL PF candidates";
+    // the last candidates must be copies of the TICL PF candidates, in order
+    auto const same = [](reco::PFCandidate const& candidate, reco::PFCandidate const& copy) {
+      return candidate.pdgId() == copy.pdgId() && candidate.charge() == copy.charge() && candidate.p4() == copy.p4();
+    };
+    if (ticl.size() > candidates.size() ||
+        !std::equal(ticl.begin(), ticl.end(), candidates.end() - ticl.size(), same)) {
+      if (strict_)
+        throw cms::Exception("Configuration") << "the " << candidates.size() << " PF candidates do not end with the "
+                                              << ticl.size() << " TICL PF candidates";
+      edm::LogWarning("PFCandidateLinkTableProducer")
+          << "the " << candidates.size() << " PF candidates do not end with the " << ticl.size()
+          << " TICL PF candidates: ticlCandidateIdx written as -1";
+      return std::vector<int32_t>(selected.size(), -1);
     }
+    const std::size_t first = candidates.size() - ticl.size();
     std::vector<int32_t> rows;
     rows.reserve(selected.size());
     for (std::size_t i : selected)
@@ -188,11 +227,13 @@ private:
     for (auto const& links : clusters_)
       products.push_back(event.getHandle(links.clustersToken).id());
     std::vector<std::vector<int32_t>> candidateRows(clusters_.size()), clusterRows(clusters_.size());
+    std::size_t foreign = 0;
     for (int32_t row = 0; std::size_t i : selected) {
       for (auto const& [block, element] : candidates[i].elementsInBlocks()) {
-        if (block.id() != blocks)
-          throw cms::Exception("Configuration") << "a PF candidate is made of elements of PF blocks " << block.id()
-                                                << ", not of the configured blocks " << blocks;
+        if (block.id() != blocks) {
+          ++foreign;
+          continue;
+        }
         auto const& cluster = block->elements()[element].clusterRef();
         if (cluster.isNull())
           continue;
@@ -206,16 +247,25 @@ private:
       }
       ++row;
     }
-    for (std::size_t k = 0; k < clusters_.size(); ++k) {
-      auto table = std::make_unique<nanoaod::FlatTable>(candidateRows[k].size(), clusters_[k].name, false);
-      table->setDoc(clusters_[k].doc);
-      table->addColumn<int32_t>("pfCandIdx", candidateRows[k], "row of the PF candidate in " + name_);
-      table->addColumn<int32_t>("clusterIdx", clusterRows[k], "row of the PF cluster");
-      event.put(clusters_[k].tableToken, std::move(table));
-    }
+    if (foreign > 0)
+      unconfigured(foreign, "elementsInBlocks", blocks);
+    for (std::size_t k = 0; k < clusters_.size(); ++k)
+      putPairs(event, clusters_[k], candidateRows[k], clusterRows[k]);
+  }
+
+  void putPairs(edm::Event& event,
+                ClusterLinks const& links,
+                std::vector<int32_t> const& candidateRows,
+                std::vector<int32_t> const& clusterRows) const {
+    auto table = std::make_unique<nanoaod::FlatTable>(candidateRows.size(), links.name, false);
+    table->setDoc(links.doc);
+    table->addColumn<int32_t>("pfCandIdx", candidateRows, "row of the PF candidate in " + name_);
+    table->addColumn<int32_t>("clusterIdx", clusterRows, "row of the PF cluster");
+    event.put(links.tableToken, std::move(table));
   }
 
   const std::string name_;
+  const bool strict_, skipNonExistingSrc_;
   const unsigned int maxLen_;
   const StringCutObjectSelector<reco::PFCandidate> cut_;
   const edm::EDGetTokenT<reco::PFCandidateCollection> candidatesToken_;
