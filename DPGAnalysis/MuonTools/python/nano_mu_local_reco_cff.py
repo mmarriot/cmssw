@@ -223,6 +223,81 @@ gemSegmentFlatTable = gemSegmentFlatTableProducer.clone(
     )
 )
 
+from DPGAnalysis.MuonTools.dtRecHitFlatTableProducer_cfi import dtRecHitFlatTableProducer
+
+dtRecHitFlatTable = dtRecHitFlatTableProducer.clone(
+    name = "dtRecHit",
+    src = "dt1DRecHits",
+    doc = "DT rec-hit (wire pair) information",
+
+    variables = cms.PSet(
+        wire = Var("wireId().wire()", "int16", doc = "wire number - range depends on chamber size"),
+        wireRawId = Var("wireId().rawId()", "uint", doc = "unique wire ID"),
+        digiTime = Var("digiTime()", float, doc = "digi time - ns, pedestal not subtracted"),
+        driftDistance = Var("localPositionError().xx()", float, doc = "drift distance: half the distance between the left and right hits - cm"),
+        posLoc_x = Var("localPosition().x()", float, doc = "wire position x in layer local coordinates - cm"),
+    ),
+
+    detIdVariables = cms.PSet(
+        wheel = DetIdVar("wheel()", "int16", doc = "wheel  -  [-2:2] range"),
+        sector = DetIdVar("sector()", "int16", doc = "sector - [1:14] range"
+                                            "<br />sector 13 used for the second MB4 of sector 4"
+                                            "<br />sector 14 used for the second MB4 of sector 10"),
+        station = DetIdVar("station()", "int16", doc = "station - [1:4] range"),
+        superLayer = DetIdVar("superLayer()", "int16", doc = "superlayer - [1:3] range"
+                                                    "<br />SL 1 and 3 are phi SLs"
+                                                    "<br />SL 2 is theta SL"),
+        layer = DetIdVar("layer()", "int16", doc = "layer - [1:4] range"),
+        rawId = DetIdVar("rawId()", "uint", doc = "unique layer ID"),
+        chamberRawId = DetIdVar("chamberId().rawId()", "uint", doc = "unique chamber ID")
+    ),
+
+    globalPosVariables = cms.PSet(
+        posGlb_x = GlobGeomVar("x()", doc = "wire position x in global coordinates - cm"),
+        posGlb_y = GlobGeomVar("y()", doc = "wire position y in global coordinates - cm"),
+        posGlb_z = GlobGeomVar("z()", doc = "wire position z in global coordinates - cm"),
+    )
+)
+
+from DPGAnalysis.MuonTools.cscRecHitFlatTableProducer_cfi import cscRecHitFlatTableProducer
+
+cscRecHitFlatTable = cscRecHitFlatTableProducer.clone(
+    name = "cscRecHit",
+    src = "csc2DRecHits",
+    doc = "CSC rec-hit information",
+
+    variables = cms.PSet(
+        tpeak = Var("tpeak()", float, doc = "time of the peak of the strip pulse - ns"),
+        wireTime = Var("wireTime()", float, doc = "time from the anode wires - ns"),
+        nStrips = Var("nStrips()", "int16", doc = "number of strips in the hit"),
+        nWireGroups = Var("nWireGroups()", "int16", doc = "number of wire groups in the hit"),
+        quality = Var("quality()", "int16", doc = "quality flag of the reconstruction"),
+        energyDeposit = Var("energyDepositedInLayer()", float, doc = "energy deposited in the layer - ADC counts"),
+        posLoc_x = Var("localPosition().x()", float, doc = "position x in layer local coordinates - cm"),
+        posLoc_y = Var("localPosition().y()", float, doc = "position y in layer local coordinates - cm"),
+    ),
+
+    detIdVariables = cms.PSet(
+        endcap = DetIdVar("endcap()", "int16", doc = "endcap - 1: positive, 2: negative"),
+        station = DetIdVar("station()", "int16", doc = "station - [1:4] range"),
+        ring = DetIdVar("ring()", "int16", doc = "ring - [1:4] range"),
+        chamber = DetIdVar("chamber()", "int16", doc = "chamber - [1:36] range"),
+        layer = DetIdVar("layer()", "int16", doc = "layer - [1:6] range"),
+        rawId = DetIdVar("rawId()", "uint", doc = "unique layer ID"),
+        chamberRawId = DetIdVar("chamberId().rawId()", "uint", doc = "unique chamber ID")
+    ),
+
+    globalPosVariables = cms.PSet(
+        posGlb_x = GlobGeomVar("x()", doc = "position x in global coordinates - cm"),
+        posGlb_y = GlobGeomVar("y()", doc = "position y in global coordinates - cm"),
+        posGlb_z = GlobGeomVar("z()", doc = "position z in global coordinates - cm"),
+    )
+)
+
+from DPGAnalysis.MuonTools.muChamberTableProducer_cfi import muChamberTableProducer
+
+muChamberTable = muChamberTableProducer.clone()
+
 muLocalRecoTables = cms.Sequence(rpcRecHitFlatTable
                                  + dtrpcPointFlatTable
                                  + cscrpcPointFlatTable
