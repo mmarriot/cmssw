@@ -1,0 +1,2 @@
+<test name="truthGraphNanoTables_t" command="python3 ${LOCALTOP}/src/SimGeneral/TruthGraphAssociatorProducers/test/truthGraphNanoTables_t.py"/>
+<test name="truthGraphNanoTablesConfig" command="cmsRun ${LOCALTOP}/src/SimGeneral/TruthGraphAssociatorProducers/test/truthGraphNanoTables_cfg.py"/>

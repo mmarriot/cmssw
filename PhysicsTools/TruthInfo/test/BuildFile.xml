@@ -81,3 +81,15 @@
 <test name="testTruthHistoryGuard" command="bash ${LOCALTOP}/src/PhysicsTools/TruthInfo/test/testTruthHistoryGuard.sh"/>
 
 <test name="testGenOnlyGraph" command="bash ${LOCALTOP}/src/PhysicsTools/TruthInfo/test/testGenOnlyGraph.sh"/>
+
+<bin file="test_catch2_*.cc" name="testPhysicsToolsTruthInfoNanoTables">
+  <use name="DataFormats/Math"/>
+  <use name="DataFormats/NanoAOD"/>
+  <use name="FWCore/TestProcessor"/>
+  <use name="FWCore/Utilities"/>
+  <use name="PhysicsTools/TruthInfo"/>
+  <use name="SimDataFormats/Associations"/>
+  <use name="SimDataFormats/EncodedEventId"/>
+  <use name="SimDataFormats/TruthInfo"/>
+  <use name="catch2"/>
+</bin>
