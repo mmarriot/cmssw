@@ -29,6 +29,9 @@
   <use name="DataFormats/JetReco"/>
   <use name="DataFormats/ParticleFlowCandidate"/>
   <use name="DataFormats/TauReco"/>
+<library file="JetTagTestInputProducer.cc" name="PhysicsToolsNanoAODJetTagTestInput">
+  <use name="DataFormats/BTauReco"/>
+  <use name="DataFormats/JetReco"/>
   <use name="FWCore/Framework"/>
   <use name="FWCore/ParameterSet"/>
   <use name="FWCore/Utilities"/>
