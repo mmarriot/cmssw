@@ -3,8 +3,18 @@
   <use name="DataFormats/NanoAOD"/>
   <use name="DataFormats/PatCandidates"/>
   <use name="DataFormats/JetReco"/>
+  <use name="FWCore/Utilities"/>
   <use name="catch2"/>
 </bin>
+
+<library file="MuonTrackLinkTestInputProducer.cc" name="PhysicsToolsNanoAODMuonTrackLinkTestInput">
+  <use name="DataFormats/MuonReco"/>
+  <use name="DataFormats/TrackReco"/>
+  <use name="FWCore/Framework"/>
+  <use name="FWCore/ParameterSet"/>
+  <use name="FWCore/Utilities"/>
+  <flags EDM_PLUGIN="1"/>
+</library>
 
 <test name="test-fastsim-refiner-eras" command="python3 $$SCRAM_TEST_PATH/test_fastsim_refiner_eras.py"/>
 
