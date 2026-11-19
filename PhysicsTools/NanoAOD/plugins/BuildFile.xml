@@ -74,6 +74,7 @@
   <use name="DataFormats/ParticleFlowCandidate"/>
   <use name="DataFormats/ParticleFlowReco"/>
   <use name="DataFormats/BTauReco"/>
+  <use name="DataFormats/MuonReco"/>
   <flags EDM_PLUGIN="1"/>
 </library>
 <library file="rntuple/*.cc" name="PhysicsToolsNanoAODRNuplePlugins">

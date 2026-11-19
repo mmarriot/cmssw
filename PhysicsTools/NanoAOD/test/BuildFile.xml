@@ -32,6 +32,9 @@
 <library file="JetTagTestInputProducer.cc" name="PhysicsToolsNanoAODJetTagTestInput">
   <use name="DataFormats/BTauReco"/>
   <use name="DataFormats/JetReco"/>
+<library file="MuonTrackLinkTestInputProducer.cc" name="PhysicsToolsNanoAODMuonTrackLinkTestInput">
+  <use name="DataFormats/MuonReco"/>
+  <use name="DataFormats/TrackReco"/>
   <use name="FWCore/Framework"/>
   <use name="FWCore/ParameterSet"/>
   <use name="FWCore/Utilities"/>
