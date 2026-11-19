@@ -60,13 +60,38 @@ TEST_CASE("MuonTrackLinkTableProducer: the selection of the muon table", "[MuonT
 }
 
 TEST_CASE("MuonTrackLinkTableProducer: tracks in collections that are not configured", "[MuonTrackLinkTableProducer]") {
+  // by default -1 with a warning; with strict, an error
+  const std::string strict = "process.toTest.strict = cms.bool(True)\n";
   SECTION("an outer track in neither outer-track collection") {
-    edm::test::TestProcessor tester(
-        edm::test::TestProcessor::Config{configuration("process.toTest.src = cms.InputTag('input', 'otherMuons')")});
-    REQUIRE_THROWS_AS(tester.test(), cms::Exception);
+    const std::string other = "process.toTest.src = cms.InputTag('input', 'otherMuons')\n";
+    edm::test::TestProcessor tester(edm::test::TestProcessor::Config{configuration(other)});
+    auto const event = tester.test();
+    REQUIRE(column(*event.get<nanoaod::FlatTable>(), "outerTrackIdx") == std::vector<int32_t>{-1});
+    REQUIRE(column(*event.get<nanoaod::FlatTable>(), "outerTrackNotAtVertexIdx") == std::vector<int32_t>{-1});
+    edm::test::TestProcessor strictTester(edm::test::TestProcessor::Config{configuration(other + strict)});
+    REQUIRE_THROWS_AS(strictTester.test(), cms::Exception);
   }
   SECTION("only one of the two outer-track collections") {
-    edm::test::TestProcessor tester(edm::test::TestProcessor::Config{configuration("del process.toTest.tracks[2]")});
+    const std::string one = "del process.toTest.tracks[2]\n";
+    edm::test::TestProcessor tester(edm::test::TestProcessor::Config{configuration(one)});
+    auto const event = tester.test();
+    REQUIRE(column(*event.get<nanoaod::FlatTable>(), "outerTrackIdx") == std::vector<int32_t>{1, -1, -1});
+    edm::test::TestProcessor strictTester(edm::test::TestProcessor::Config{configuration(one + strict)});
+    REQUIRE_THROWS_AS(strictTester.test(), cms::Exception);
+  }
+}
+
+TEST_CASE("MuonTrackLinkTableProducer: missing muons", "[MuonTrackLinkTableProducer]") {
+  const std::string missing = "process.toTest.src = cms.InputTag('input', 'missing')\n";
+  SECTION("fail by default") {
+    edm::test::TestProcessor tester(edm::test::TestProcessor::Config{configuration(missing)});
     REQUIRE_THROWS_AS(tester.test(), cms::Exception);
+  }
+  SECTION("an empty table with skipNonExistingSrc") {
+    edm::test::TestProcessor tester(edm::test::TestProcessor::Config{
+        configuration(missing + "process.toTest.skipNonExistingSrc = cms.bool(True)")});
+    auto const event = tester.test();
+    REQUIRE(event.get<nanoaod::FlatTable>()->nRows() == 0);
+    REQUIRE(event.get<nanoaod::FlatTable>()->nColumns() == 4);
   }
 }
