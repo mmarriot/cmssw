@@ -59,6 +59,8 @@
   <use name="DataFormats/EcalRecHit"/>
   <use name="DataFormats/HcalRecHit"/>
   <use name="Geometry/CaloGeometry"/>
+  <use name="DataFormats/FTLRecHit"/>
+  <use name="Geometry/MTDGeometryBuilder"/>
   <flags EDM_PLUGIN="1"/>
 </library>
 <library file="rntuple/*.cc" name="PhysicsToolsNanoAODRNuplePlugins">
