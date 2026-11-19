@@ -1,6 +1,6 @@
 /** \class MuRecoFlatTableProducers.ccMuRecoFlatTableProducers DPGAnalysis/MuonTools/src/MuRecoFlatTableProducers.cc
  *  
- * EDProducers : the flat table producers for DT, GEM and RPC RecHits and Segments
+ * EDProducers : the flat table producers for DT, CSC, GEM and RPC RecHits and Segments
  *
  * \author C. Battilana (INFN BO)
  *
@@ -15,11 +15,19 @@
 
 using DTSegmentFlatTableProducer = MuRecObjBaseProducer<DTChamberId, DTRecSegment4D, DTGeometry>;
 
+#include "DataFormats/DTRecHit/interface/DTRecHitCollection.h"
+
+using DTRecHitFlatTableProducer = MuRecObjBaseProducer<DTLayerId, DTRecHit1DPair, DTGeometry>;
+
 #include "Geometry/CSCGeometry/interface/CSCGeometry.h"
 #include "Geometry/Records/interface/MuonGeometryRecord.h"
 #include "DataFormats/CSCRecHit/interface/CSCSegmentCollection.h"
 
 using CSCSegmentFlatTableProducer = MuRecObjBaseProducer<CSCDetId, CSCSegment, CSCGeometry>;
+
+#include "DataFormats/CSCRecHit/interface/CSCRecHit2DCollection.h"
+
+using CSCRecHitFlatTableProducer = MuRecObjBaseProducer<CSCDetId, CSCRecHit2D, CSCGeometry>;
 
 #include "Geometry/RPCGeometry/interface/RPCGeometry.h"
 #include "Geometry/Records/interface/MuonGeometryRecord.h"
@@ -43,7 +51,9 @@ using GEMSegmentFlatTableProducer = MuRecObjBaseProducer<GEMDetId, GEMSegment, G
 #include "FWCore/Framework/interface/MakerMacros.h"
 
 DEFINE_FWK_MODULE(DTSegmentFlatTableProducer);
+DEFINE_FWK_MODULE(DTRecHitFlatTableProducer);
 DEFINE_FWK_MODULE(CSCSegmentFlatTableProducer);
+DEFINE_FWK_MODULE(CSCRecHitFlatTableProducer);
 DEFINE_FWK_MODULE(RPCRecHitFlatTableProducer);
 DEFINE_FWK_MODULE(GEMRecHitFlatTableProducer);
 DEFINE_FWK_MODULE(GEMSegmentFlatTableProducer);

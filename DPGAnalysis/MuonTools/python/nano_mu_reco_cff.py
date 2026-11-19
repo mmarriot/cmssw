@@ -63,6 +63,14 @@ from DPGAnalysis.MuonTools.muCSCTnPFlatTableProducer_cfi import muCSCTnPFlatTabl
 muCSCTnPFlatTable = muCSCTnPFlatTableProducer.clone()
 muCSCTnPFlatTable.ServiceParameters = MuonServiceProxy.ServiceParameters
 
+from DPGAnalysis.MuonTools.muDTSegmentMatchTableProducer_cfi import muDTSegmentMatchTableProducer
+from DPGAnalysis.MuonTools.muCSCSegmentMatchTableProducer_cfi import muCSCSegmentMatchTableProducer
+from DPGAnalysis.MuonTools.muGEMSegmentMatchTableProducer_cfi import muGEMSegmentMatchTableProducer
+
+muDTSegmentMatchTable = muDTSegmentMatchTableProducer.clone(src = "patMuons")
+muCSCSegmentMatchTable = muCSCSegmentMatchTableProducer.clone(src = "patMuons")
+muGEMSegmentMatchTable = muGEMSegmentMatchTableProducer.clone(src = "patMuons")
+
 muRecoTables = cms.Sequence(patMuons
                             + muonFlatTable
                             + muDTMuonExtTable
