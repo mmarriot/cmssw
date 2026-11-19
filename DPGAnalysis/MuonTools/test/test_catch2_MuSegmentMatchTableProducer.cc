@@ -8,6 +8,7 @@
 #include "FWCore/TestProcessor/interface/TestProcessor.h"
 #include "FWCore/Utilities/interface/Exception.h"
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -90,5 +91,76 @@ TEST_CASE("MuDTSegmentMatchTableProducer", "[MuSegmentMatchTableProducer]") {
     edm::test::TestProcessor tester(cfg);
     auto event = tester.test(std::make_pair(muons, std::make_unique<reco::MuonCollection>(1, muon(10.))));
     REQUIRE(event.get<nanoaod::FlatTable>()->nRows() == 0);
+  }
+}
+
+// Segments and muons with matches to them, made by MuSegmentMatchTestInputProducer (this directory).
+namespace {
+  std::string matchConfig(std::string const& plugin,
+                          std::string const& parameters,
+                          std::string const& muons = "'input'") {
+    return R"(from FWCore.TestProcessor.TestProcess import *
+process = TestProcess()
+process.input = cms.EDProducer('MuSegmentMatchTestInputProducer')
+process.toTest = cms.EDProducer(')" +
+           plugin + "', src = cms.InputTag(" + muons + "), " + parameters + R"()
+process.moduleToTest(process.toTest, cms.Task(process.input))
+)";
+  }
+
+  template <typename T>
+  std::vector<T> column(nanoaod::FlatTable const& table, std::string const& name) {
+    REQUIRE(table.columnIndex(name) >= 0);
+    auto const data = table.columnData<T>(table.columnIndex(name));
+    return {data.begin(), data.end()};
+  }
+
+  nanoaod::FlatTable matches(std::string const& plugin, std::string const& parameters) {
+    edm::test::TestProcessor tester(edm::test::TestProcessor::Config{matchConfig(plugin, parameters)});
+    return *tester.test().get<nanoaod::FlatTable>();
+  }
+}  // namespace
+
+TEST_CASE("MuSegmentMatchTableProducer: rows of the matches", "[MuSegmentMatchTableProducer]") {
+  SECTION("DT") {
+    auto const table = matches("MuDTSegmentMatchTableProducer", "segmentSrc = cms.InputTag('input', 'dtSegments')");
+    REQUIRE(table.name() == "muonDTSegmentMatch");
+    REQUIRE(column<int32_t>(table, "muonIdx") == std::vector<int32_t>{0, 0, 2});
+    REQUIRE(column<int32_t>(table, "segmentIdx") == std::vector<int32_t>{1, 0, 2});
+    REQUIRE(column<uint32_t>(table, "mask") == std::vector<uint32_t>{1 << 10, 0, 1 << 18});
+  }
+
+  SECTION("CSC: a segment match without a segment is left out") {
+    auto const table = matches("MuCSCSegmentMatchTableProducer", "segmentSrc = cms.InputTag('input', 'cscSegments')");
+    REQUIRE(column<int32_t>(table, "muonIdx") == std::vector<int32_t>{0, 2});
+    REQUIRE(column<int32_t>(table, "segmentIdx") == std::vector<int32_t>{1, 0});
+    REQUIRE(column<uint32_t>(table, "mask") == std::vector<uint32_t>{2, 1});
+  }
+
+  SECTION("GEM") {
+    auto const table = matches("MuGEMSegmentMatchTableProducer", "segmentSrc = cms.InputTag('input', 'gemSegments')");
+    REQUIRE(column<int32_t>(table, "muonIdx") == std::vector<int32_t>{0});
+    REQUIRE(column<int32_t>(table, "segmentIdx") == std::vector<int32_t>{0});
+    REQUIRE(column<uint32_t>(table, "mask") == std::vector<uint32_t>{4});
+  }
+
+  SECTION("muonIdx is the row of the muon after the cut") {
+    auto const table = matches("MuDTSegmentMatchTableProducer",
+                               "segmentSrc = cms.InputTag('input', 'dtSegments'), cut = cms.string('pt > 15')");
+    REQUIRE(column<int32_t>(table, "muonIdx") == std::vector<int32_t>{1});
+    REQUIRE(column<int32_t>(table, "segmentIdx") == std::vector<int32_t>{2});
+  }
+
+  SECTION("maxLen") {
+    auto const table = matches(
+        "MuDTSegmentMatchTableProducer",
+        "segmentSrc = cms.InputTag('input', 'dtSegments'), cut = cms.string('pt > 15'), maxLen = cms.uint32(1)");
+    REQUIRE(table.nRows() == 0);
+  }
+
+  SECTION("a segment of another collection") {
+    edm::test::TestProcessor tester(edm::test::TestProcessor::Config{matchConfig(
+        "MuDTSegmentMatchTableProducer", "segmentSrc = cms.InputTag('input', 'dtSegments')", "'input', 'otherMuons'")});
+    REQUIRE_THROWS_AS(tester.test(), cms::Exception);
   }
 }

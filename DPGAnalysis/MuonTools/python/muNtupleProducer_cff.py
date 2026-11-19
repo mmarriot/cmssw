@@ -37,3 +37,8 @@ def muDPGNanoCustomize(process) :
                getattr(process,output).outputCommands.remove("keep edmTriggerResults_*_*_*")
 
      return process
+
+def muDPGNanoAddHitTables(process) :
+     """Adds the DT and CSC rec-hit, CSC segment, chamber and muon <-> segment match tables to muDPGNanoProducer"""
+     process.muDPGNanoProducer += process.muLocalRecoHitTables + process.muSegmentMatchTables
+     return process

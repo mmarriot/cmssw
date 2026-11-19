@@ -294,9 +294,54 @@ cscRecHitFlatTable = cscRecHitFlatTableProducer.clone(
     )
 )
 
+from DPGAnalysis.MuonTools.cscSegmentFlatTableProducer_cfi import cscSegmentFlatTableProducer
+
+cscSegmentFlatTable = cscSegmentFlatTableProducer.clone(
+    name = "cscSegment",
+    src = "cscSegments",
+    doc = "CSC segment information",
+
+    variables = cms.PSet(
+        nRecHits = Var("nRecHits()", "int16", doc = "number of rec-hits of the segment"),
+        normChi2 = Var("chi2() / degreesOfFreedom()", float, doc = "chi2/n.d.o.f. of the segment fit"),
+        time = Var("time()", float, doc = "time - ns"),
+        posLoc_x = Var("localPosition().x()", float, doc = "position x in local coordinates - cm"),
+        posLoc_y = Var("localPosition().y()", float, doc = "position y in local coordinates - cm"),
+        dirLoc_x = Var("localDirection().x()", float, doc = "direction x in local coordinates"),
+        dirLoc_y = Var("localDirection().y()", float, doc = "direction y in local coordinates"),
+        dirLoc_z = Var("localDirection().z()", float, doc = "direction z in local coordinates"),
+    ),
+
+    detIdVariables = cms.PSet(
+        endcap = DetIdVar("endcap()", "int16", doc = "endcap - 1: positive, 2: negative"),
+        station = DetIdVar("station()", "int16", doc = "station - [1:4] range"),
+        ring = DetIdVar("ring()", "int16", doc = "ring - [1:4] range"),
+        chamber = DetIdVar("chamber()", "int16", doc = "chamber - [1:36] range"),
+        rawId = DetIdVar("rawId()", "uint", doc = "unique chamber ID")
+    ),
+
+    globalPosVariables = cms.PSet(
+        posGlb_x = GlobGeomVar("x()", doc = "position x in global coordinates - cm"),
+        posGlb_y = GlobGeomVar("y()", doc = "position y in global coordinates - cm"),
+        posGlb_z = GlobGeomVar("z()", doc = "position z in global coordinates - cm"),
+    ),
+
+    globalDirVariables = cms.PSet(
+        dirGlb_phi = GlobGeomVar("phi().value()", doc = "direction phi in global coordinates - radians [-pi:pi]"),
+        dirGlb_eta = GlobGeomVar("eta()", doc = "direction eta in global coordinates"),
+    )
+)
+
 from DPGAnalysis.MuonTools.muChamberTableProducer_cfi import muChamberTableProducer
 
 muChamberTable = muChamberTableProducer.clone()
+
+# not in muLocalRecoTables, so that the ntuples keep their size: added by muNtupleProducer_cff.muDPGNanoAddHitTables
+muLocalRecoHitTables = cms.Sequence(dtRecHitFlatTable
+                                    + cscRecHitFlatTable
+                                    + cscSegmentFlatTable
+                                    + muChamberTable
+                                   )
 
 muLocalRecoTables = cms.Sequence(rpcRecHitFlatTable
                                  + dtrpcPointFlatTable

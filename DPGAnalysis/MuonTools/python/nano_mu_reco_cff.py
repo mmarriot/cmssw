@@ -71,6 +71,12 @@ muDTSegmentMatchTable = muDTSegmentMatchTableProducer.clone(src = "patMuons")
 muCSCSegmentMatchTable = muCSCSegmentMatchTableProducer.clone(src = "patMuons")
 muGEMSegmentMatchTable = muGEMSegmentMatchTableProducer.clone(src = "patMuons")
 
+# not in muRecoTables: added by muNtupleProducer_cff.muDPGNanoAddHitTables
+muSegmentMatchTables = cms.Sequence(muDTSegmentMatchTable
+                                    + muCSCSegmentMatchTable
+                                    + muGEMSegmentMatchTable
+                                   )
+
 muRecoTables = cms.Sequence(patMuons
                             + muonFlatTable
                             + muDTMuonExtTable
