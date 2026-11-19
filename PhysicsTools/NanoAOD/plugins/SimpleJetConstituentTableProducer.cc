@@ -7,15 +7,53 @@
 #include "FWCore/ParameterSet/interface/ParameterSet.h"
 #include "FWCore/Utilities/interface/StreamID.h"
 
+#include "DataFormats/JetReco/interface/PFJet.h"
 #include "DataFormats/PatCandidates/interface/Jet.h"
 #include "DataFormats/PatCandidates/interface/PackedCandidate.h"
 #include "DataFormats/PatCandidates/interface/PackedGenParticle.h"
+#include "DataFormats/TauReco/interface/PFTau.h"
 
 #include "DataFormats/Candidate/interface/CandidateFwd.h"
 
 #include "CommonTools/Utils/interface/StringCutObjectSelector.h"
 #include "DataFormats/NanoAOD/interface/FlatTable.h"
 
+#include <map>
+#include <type_traits>
+
+namespace {
+  // The row of each candidate of a view, by the product and key of its Ptr. A view of a collection holds the keys
+  // 0..n-1 of one product, and a view of Ptrs (a merged selection of packed candidates) keys of a few products, so
+  // one key -> row vector per product turns the search for a constituent into two lookups (a linear search costs
+  // tens of ms per event for the thousands of constituents of RECO jets among the PF candidates at 200 pileup).
+  class CandidateRows {
+  public:
+    explicit CandidateRows(std::vector<reco::CandidatePtr> const &candidates) {
+      for (int row = 0; auto const &ptr : candidates) {
+        if (ptr.isNonnull()) {
+          auto &rows = rows_[ptr.id()];
+          if (ptr.key() >= rows.size())
+            rows.resize(ptr.key() + 1, -1);
+          if (rows[ptr.key()] < 0)  // the first row holding it, as a linear search would find
+            rows[ptr.key()] = row;
+        }
+        ++row;
+      }
+    }
+
+    // -1 if the candidate is not in the view
+    int row(reco::CandidatePtr const &ptr) const {
+      auto const found = rows_.find(ptr.id());
+      return (found == rows_.end() || ptr.key() >= found->second.size()) ? -1 : found->second[ptr.key()];
+    }
+
+  private:
+    std::map<edm::ProductID, std::vector<int>> rows_;
+  };
+}  // namespace
+
+// The constituents of jets (their daughters) or of taus (their signal candidates) as a table of rows of a candidate
+// table: for each constituent, the index of its candidate in `candidates` and of its jet or tau among the selected ones.
 template <typename T, typename C = std::vector<typename T::ConstituentTypeFwdPtr>>
 class SimpleJetConstituentTableProducer : public edm::stream::EDProducer<> {
 public:
@@ -29,6 +67,13 @@ public:
   static void fillDescriptions(edm::ConfigurationDescriptions &descriptions);
 
 private:
+  static std::vector<reco::CandidatePtr> const &constituents(T const &object) {
+    if constexpr (std::is_same_v<T, reco::PFTau>)
+      return object.signalCands();
+    else
+      return object.daughterPtrVector();
+  }
+
   void produce(edm::Event &, const edm::EventSetup &) override;
 
   const std::string name_;
@@ -70,7 +115,7 @@ void SimpleJetConstituentTableProducer<T, C>::produce(edm::Event &iEvent, const 
 
   edm::Handle<reco::CandidateView> cands_;
   iEvent.getByToken(cand_token_, cands_);
-  auto candPtrs = cands_->ptrs();
+  CandidateRows const candRows(cands_->ptrs());
 
   // First, select jets
   std::vector<T> jetsPassCut;
@@ -88,7 +133,7 @@ void SimpleJetConstituentTableProducer<T, C>::produce(edm::Event &iEvent, const 
     const auto &jet = jetsPassCut.at(jetIdx);
 
     // Loop over jet constituents
-    std::vector<reco::CandidatePtr> const &daughters = jet.daughterPtrVector();
+    std::vector<reco::CandidatePtr> const &daughters = constituents(jet);
     for (const auto &dauPtr : daughters) {
       // Apply cut on jet constituent
       typename C::value_type cand = initptr(dauPtr);
@@ -96,14 +141,14 @@ void SimpleJetConstituentTableProducer<T, C>::produce(edm::Event &iEvent, const 
         continue;
 
       // Find jet constituent in candidate collection
-      auto candInNewList = std::find(candPtrs.begin(), candPtrs.end(), dauPtr);
-      if (candInNewList == candPtrs.end()) {
+      const int row = candRows.row(dauPtr);
+      if (row < 0) {
         continue;
       }
 
       outCands->push_back(cand);
       parentJetIdx.push_back(jetIdx);
-      candIdx.push_back(candInNewList - candPtrs.begin());
+      candIdx.push_back(row);
     }
   }  // end jet loop
 
@@ -116,6 +161,9 @@ void SimpleJetConstituentTableProducer<T, C>::produce(edm::Event &iEvent, const 
   if constexpr (std::is_same<T, reco::GenJet>::value) {
     parentJetIdxName = "genJetIdx";
     parentJetIdxDoc = "Index of the parent gen jet";
+  } else if constexpr (std::is_same<T, reco::PFTau>::value) {
+    parentJetIdxName = "tauIdx";
+    parentJetIdxDoc = "Index of the parent tau";
   }
   candTable->template addColumn<int>(parentJetIdxName, parentJetIdx, parentJetIdxDoc);
 
@@ -123,20 +171,10 @@ void SimpleJetConstituentTableProducer<T, C>::produce(edm::Event &iEvent, const 
   iEvent.put(std::move(outCands));
 }
 
-template <>
-edm::Ptr<pat::PackedCandidate> const
-SimpleJetConstituentTableProducer<pat::Jet, std::vector<edm::Ptr<pat::PackedCandidate>>>::initptr(
-    edm::Ptr<reco::Candidate> const &dau) const {
-  edm::Ptr<pat::PackedCandidate> retval(dau);
-  return retval;
-}
-
-template <>
-edm::Ptr<pat::PackedGenParticle> const
-SimpleJetConstituentTableProducer<reco::GenJet, std::vector<edm::Ptr<pat::PackedGenParticle>>>::initptr(
-    edm::Ptr<reco::Candidate> const &dau) const {
-  edm::Ptr<pat::PackedGenParticle> retval(dau);
-  return retval;
+template <typename T, typename C>
+typename SimpleJetConstituentTableProducer<T, C>::ConstituentValueType const
+SimpleJetConstituentTableProducer<T, C>::initptr(edm::Ptr<reco::Candidate> const &dau) const {
+  return ConstituentValueType(dau);
 }
 
 template <typename T, typename C>
@@ -157,5 +195,13 @@ typedef SimpleJetConstituentTableProducer<pat::Jet, std::vector<edm::Ptr<pat::Pa
 typedef SimpleJetConstituentTableProducer<reco::GenJet, std::vector<edm::Ptr<pat::PackedGenParticle>>>
     SimpleGenJetConstituentTableProducer;
 
+// RECO jets and taus: the constituents are Ptrs to the PF candidates (particleFlow), read through reco::Candidate
+typedef SimpleJetConstituentTableProducer<reco::PFJet, std::vector<reco::CandidatePtr>>
+    SimplePFJetConstituentTableProducer;
+typedef SimpleJetConstituentTableProducer<reco::PFTau, std::vector<reco::CandidatePtr>>
+    SimplePFTauConstituentTableProducer;
+
 DEFINE_FWK_MODULE(SimplePatJetConstituentTableProducer);
 DEFINE_FWK_MODULE(SimpleGenJetConstituentTableProducer);
+DEFINE_FWK_MODULE(SimplePFJetConstituentTableProducer);
+DEFINE_FWK_MODULE(SimplePFTauConstituentTableProducer);
