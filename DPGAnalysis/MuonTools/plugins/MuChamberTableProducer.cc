@@ -2,8 +2,8 @@
  *
  * EDProducer : the muon chambers that hold a rec-hit or a segment of the configured collections in the event, one
  * row per chamber, ordered by DetId, with the geometry of the chamber: its centre, its local x and y axes in global
- * coordinates, and the half sizes of its (rectangular or trapezoidal) bounds. With it, the chambers can be drawn or
- * used as volumes without the geometry, e.g. for occupancy or efficiency maps.
+ * coordinates, and the half sizes of its (rectangular or trapezoidal) bounds. With it, the chambers can be used as
+ * volumes without the geometry, e.g. for occupancy or efficiency maps.
  * The chamber of a DT DetId is its DTChamberId, of a CSC DetId its chamber (layer 0), of an RPC DetId its chamber
  * (roll 0) and of a GEM DetId its superchamber (layer 0, eta partition 0).
  */
