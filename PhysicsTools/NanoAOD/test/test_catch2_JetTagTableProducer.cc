@@ -4,12 +4,11 @@
 #include "FWCore/TestProcessor/interface/TestProcessor.h"
 #include "FWCore/Utilities/interface/Exception.h"
 
-#include <cmath>
 #include <string>
 #include <vector>
 
 // The input is made by JetTagTestInputProducer (this directory): jets of pt 10, 20, 30 with tags a = 0.1, 0.2, 0.3
-// and b = -1, 0.5, 2; tags "other" of other jets, and an empty JetTagCollection "empty".
+// and b = -1, 0.5, 2; tags "other" of other jets; "noJets" without jets, and their (empty) tags "empty".
 namespace {
   std::string configuration(std::string const& parameters = "") {
     return R"cfg(from FWCore.TestProcessor.TestProcess import *
@@ -66,17 +65,34 @@ TEST_CASE("JetTagTableProducer: the selection of the jet table", "[JetTagTablePr
   }
 }
 
-TEST_CASE("JetTagTableProducer: tags of other jets, and no tags", "[JetTagTableProducer]") {
+TEST_CASE("JetTagTableProducer: tags of other jets, no jets, missing jets", "[JetTagTableProducer]") {
   SECTION("tags of another jet collection throw") {
     edm::test::TestProcessor tester(
         edm::test::TestProcessor::Config{configuration("process.toTest.variables.tagA.src = ['input:other']")});
     REQUIRE_THROWS_AS(tester.test(), cms::Exception);
   }
-  SECTION("an empty JetTagCollection gives NaN") {
+  SECTION("an empty JetTagCollection for jets throws") {
     edm::test::TestProcessor tester(edm::test::TestProcessor::Config{
         configuration("process.toTest.variables.tagAB.src = ['input:a', 'input:empty']")});
+    REQUIRE_THROWS_AS(tester.test(), cms::Exception);
+  }
+  SECTION("no jets: empty columns, the tags are not read") {
+    edm::test::TestProcessor tester(edm::test::TestProcessor::Config{
+        configuration("process.toTest.src = 'input:noJets'\nprocess.toTest.variables.tagA.src = ['input:empty']")});
     auto const event = tester.test();
-    for (float value : column(*event.get<nanoaod::FlatTable>(), "tagAB"))
-      REQUIRE(std::isnan(value));
+    auto const& table = *event.get<nanoaod::FlatTable>();
+    REQUIRE(table.nRows() == 0);
+    REQUIRE(table.nColumns() == 3);
+  }
+  SECTION("missing jets fail") {
+    edm::test::TestProcessor tester(
+        edm::test::TestProcessor::Config{configuration("process.toTest.src = 'input:missing'")});
+    REQUIRE_THROWS_AS(tester.test(), cms::Exception);
+  }
+  SECTION("missing jets with skipNonExistingSrc: an empty table") {
+    edm::test::TestProcessor tester(edm::test::TestProcessor::Config{
+        configuration("process.toTest.src = 'input:missing'\nprocess.toTest.skipNonExistingSrc = cms.bool(True)")});
+    auto const event = tester.test();
+    REQUIRE(event.get<nanoaod::FlatTable>()->nRows() == 0);
   }
 }
